@@ -9,15 +9,6 @@
             "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-guard\\scripts\\guard_session_start.py\""
           }
         ]
-      },
-      {
-        "matcher": "startup|resume|compact|clear",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-resume-auto\\scripts\\resume_restore.py\""
-          }
-        ]
       }
     ],
     "UserPromptSubmit": [
@@ -27,15 +18,6 @@
           {
             "type": "command",
             "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-guard\\scripts\\guard_prompt.py\""
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-resume-auto\\scripts\\resume_prompt.py\""
           }
         ]
       }
@@ -67,48 +49,6 @@
           {
             "type": "command",
             "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-guard\\scripts\\guard_session_end.py\""
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-resume-auto\\scripts\\resume_session_end.py\""
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "manual|auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-resume-auto\\scripts\\resume_presave.py\""
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-resume-auto\\scripts\\resume_tick.py\""
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "^(Workflow|Agent|Bash|PowerShell)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"C:\\Users\\ekth3\\.claude\\skills\\session-resume-auto\\scripts\\resume_bg_log.py\""
           }
         ]
       }
