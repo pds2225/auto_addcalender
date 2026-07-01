@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -46,52 +47,23 @@ api_key = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=api_key)
 
 KO_DAYS = ["월", "화", "수", "목", "금", "토", "일"]
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
-# ── 세션 초기화 ────────────────────────────────────────
-for key, default in {
-    "input_text": "",
-    "events": [],
-    "registered": False,
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-
-# ── 유틸 함수 ──────────────────────────────────────────
-def validate_gcal_date(date_str):
-    return bool(re.match(r"^\d{8}T\d{6}$", str(date_str)))
-
-
-def fmt(date_str):
-    try:
-        dt = datetime.strptime(date_str, "%Y%m%dT%H%M%S")
-        day_ko = KO_DAYS[dt.weekday()]
-        return dt.strftime(f"%m/%d({day_ko}) %H:%M")
-    except Exception:
-        return date_str
-
-
-def process_text(text):
-    normalized_text = normalize_date_ranges(text)
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    prompt = f"""
-현재 시간은 {current_time} (KST) 입니다.
-
-아래 안내문에서 일정을 추출하여 JSON 배열로만 출력하십시오.
-
+EVENT_EXTRACTION_RULES = """
 [출력 형식]
-{{
+{
   "events": [
-    {{
+    {
       "title": "구체적인 일정 제목",
       "start_date": "YYYYMMDDTHHMMSS",
       "end_date": "YYYYMMDDTHHMMSS",
       "location": "전체 장소 또는 주소",
       "details": "참석자 필요 정보 전체",
       "details_brief": "핵심 요약 (180자 이내)"
-    }}
+    }
   ]
-}}
+}
 
 [제목 규칙]
 - 제목은 캘린더 목록에서 일정 내용을 바로 구분할 수 있게 구체적으로 작성
@@ -133,7 +105,53 @@ def process_text(text):
 - 반드시 YYYYMMDDTHHMMSS 형식만 사용
 - ISO 8601 금지
 - JSON 외 텍스트 절대 출력 금지
+"""
 
+# ── 세션 초기화 ────────────────────────────────────────
+for key, default in {
+    "input_text": "",
+    "events": [],
+    "registered": False,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+
+# ── 유틸 함수 ──────────────────────────────────────────
+def validate_gcal_date(date_str):
+    return bool(re.match(r"^\d{8}T\d{6}$", str(date_str)))
+
+
+def fmt(date_str):
+    try:
+        dt = datetime.strptime(date_str, "%Y%m%dT%H%M%S")
+        day_ko = KO_DAYS[dt.weekday()]
+        return dt.strftime(f"%m/%d({day_ko}) %H:%M")
+    except Exception:
+        return date_str
+
+
+def validate_extracted_events(events, source_label="입력"):
+    if not events:
+        raise ValueError(f"일정을 추출하지 못했습니다. {source_label}을(를) 다시 확인해 주세요.")
+
+    for i, event in enumerate(events):
+        if not validate_gcal_date(event.get("start_date", "")):
+            raise ValueError(f"이벤트 {i+1} start_date 형식 오류: {event.get('start_date')}")
+        if not validate_gcal_date(event.get("end_date", "")):
+            raise ValueError(f"이벤트 {i+1} end_date 형식 오류: {event.get('end_date')}")
+
+    return events
+
+
+def process_text(text):
+    normalized_text = normalize_date_ranges(text)
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    prompt = f"""
+현재 시간은 {current_time} (KST) 입니다.
+
+아래 안내문에서 일정을 추출하여 JSON 배열로만 출력하십시오.
+{EVENT_EXTRACTION_RULES}
 텍스트:
 {normalized_text}
 """
@@ -144,18 +162,50 @@ def process_text(text):
         temperature=0.1,
     )
     data = json.loads(response.choices[0].message.content)
-    events = data.get("events", [])
+    return validate_extracted_events(data.get("events", []), "텍스트")
 
-    if not events:
-        raise ValueError("일정을 추출하지 못했습니다. 텍스트를 다시 확인해 주세요.")
 
-    for i, event in enumerate(events):
-        if not validate_gcal_date(event.get("start_date", "")):
-            raise ValueError(f"이벤트 {i+1} start_date 형식 오류: {event.get('start_date')}")
-        if not validate_gcal_date(event.get("end_date", "")):
-            raise ValueError(f"이벤트 {i+1} end_date 형식 오류: {event.get('end_date')}")
+def process_image(image_bytes, mime_type, supplemental_text=""):
+    if mime_type not in ALLOWED_IMAGE_TYPES:
+        raise ValueError("지원하지 않는 이미지 형식입니다. PNG, JPG, WEBP, GIF만 사용할 수 있습니다.")
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise ValueError("이미지 크기는 10MB 이하여야 합니다.")
 
-    return events
+    normalized_text = normalize_date_ranges(supplemental_text) if supplemental_text.strip() else ""
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    source_lines = ["아래 이미지에서 일정을 추출하여 JSON 배열로만 출력하십시오."]
+    if normalized_text:
+        source_lines.extend(
+            [
+                "이미지와 함께 제공된 추가 텍스트도 함께 참고하십시오.",
+                "추가 텍스트:",
+                normalized_text,
+            ]
+        )
+
+    prompt = f"""
+현재 시간은 {current_time} (KST) 입니다.
+
+{chr(10).join(source_lines)}
+{EVENT_EXTRACTION_RULES}
+"""
+    image_data_url = f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ],
+            }
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.1,
+    )
+    data = json.loads(response.choices[0].message.content)
+    return validate_extracted_events(data.get("events", []), "이미지")
 
 
 def build_calendar_url(event):
@@ -289,6 +339,7 @@ def render_event_cards(events, selected_platforms):
 
 def clear_all():
     st.session_state.input_text = ""
+    st.session_state.uploaded_image = None
     st.session_state.events = []
     st.session_state.registered = False
 
@@ -299,21 +350,41 @@ def clear_all():
 user_input = st.text_area(
     "일정 내용을 입력하세요",
     key="input_text",
-    placeholder="복사한 텍스트를 붙여넣으세요.",
+    placeholder="복사한 텍스트를 붙여넣거나, 아래에서 이미지를 첨부하세요.",
 )
 
+uploaded_image = st.file_uploader(
+    "이미지 첨부 (선택)",
+    type=["png", "jpg", "jpeg", "webp", "gif"],
+    key="uploaded_image",
+    help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다. 텍스트와 함께 사용할 수도 있습니다.",
+)
+
+if uploaded_image is not None:
+    st.image(uploaded_image, caption="첨부된 이미지", use_container_width=True)
+
 if st.button("일정등록", use_container_width=True):
-    if user_input.strip():
+    has_text = bool(user_input.strip())
+    has_image = uploaded_image is not None
+
+    if has_text or has_image:
         with st.spinner("AI 분석 중..."):
             try:
-                events = split_multiday_events(process_text(user_input))
-                st.session_state.events = events
+                if has_image:
+                    events = process_image(
+                        uploaded_image.getvalue(),
+                        uploaded_image.type or "image/jpeg",
+                        user_input,
+                    )
+                else:
+                    events = process_text(user_input)
+                st.session_state.events = split_multiday_events(events)
                 st.session_state.registered = True
             except Exception as e:
-                st.error("처리 중 오류가 발생했습니다. 텍스트를 다시 확인해 주세요.")
+                st.error("처리 중 오류가 발생했습니다. 입력 내용을 다시 확인해 주세요.")
                 st.write(e)
     else:
-        st.warning("텍스트를 입력해 주세요.")
+        st.warning("텍스트 또는 이미지를 입력해 주세요.")
 
 
 # ══════════════════════════════════════════════════════
