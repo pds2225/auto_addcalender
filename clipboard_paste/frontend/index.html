@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <script src="https://unpkg.com/streamlit-component-lib@2.0.0/dist/streamlit-component-lib.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #zone {
+      min-height: 96px;
+      padding: 16px;
+      border: 2px dashed #9aa0a6;
+      border-radius: 10px;
+      background: #f8f9fa;
+      color: #5f6368;
+      text-align: center;
+      line-height: 1.5;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    #zone:focus,
+    #zone.active {
+      border-color: #4285f4;
+      background: #eef4ff;
+      color: #1a73e8;
+    }
+    #status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #188038;
+      text-align: center;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="zone" tabindex="0">이 영역을 클릭한 뒤 Ctrl+V (Mac: ⌘+V)로 이미지를 붙여넣으세요.</div>
+  <div id="status"></div>
+  <script>
+    const zone = document.getElementById("zone");
+    const status = document.getElementById("status");
+
+    function setLabel(label) {
+      zone.textContent = label || "이 영역을 클릭한 뒤 Ctrl+V (Mac: ⌘+V)로 이미지를 붙여넣으세요.";
+    }
+
+    function onRender(event) {
+      setLabel(event.detail.args.label);
+      Streamlit.setFrameHeight(130);
+    }
+
+    zone.addEventListener("click", () => zone.focus());
+    zone.addEventListener("focus", () => zone.classList.add("active"));
+    zone.addEventListener("blur", () => zone.classList.remove("active"));
+
+    zone.addEventListener("paste", (event) => {
+      const items = event.clipboardData && event.clipboardData.items;
+      if (!items) {
+        status.textContent = "클립보드 접근이 지원되지 않는 환경입니다.";
+        return;
+      }
+
+      for (const item of items) {
+        if (!item.type.startsWith("image/")) {
+          continue;
+        }
+        const file = item.getAsFile();
+        if (!file) {
+          continue;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          Streamlit.setComponentValue(reader.result);
+          status.textContent = "이미지가 붙여넣어졌습니다.";
+        };
+        reader.onerror = () => {
+          status.textContent = "이미지를 읽지 못했습니다.";
+        };
+        reader.readAsDataURL(file);
+        event.preventDefault();
+        return;
+      }
+
+      status.textContent = "클립보드에 이미지가 없습니다. 이미지를 복사한 뒤 다시 붙여넣어 주세요.";
+    });
+
+    Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+    Streamlit.setComponentReady();
+    Streamlit.setFrameHeight(130);
+  </script>
+</body>
+</html>
