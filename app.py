@@ -10,6 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from openai import OpenAI
 
+from clipboard_paste import clipboard_paste_zone
 from date_utils import normalize_date_ranges
 
 st.set_page_config(page_title="Omni-Sync Mobile", layout="centered")
@@ -112,6 +113,8 @@ for key, default in {
     "input_text": "",
     "events": [],
     "registered": False,
+    "pasted_image_data_url": None,
+    "clipboard_paste_reset": 0,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -129,6 +132,36 @@ def fmt(date_str):
         return dt.strftime(f"%m/%d({day_ko}) %H:%M")
     except Exception:
         return date_str
+
+
+def parse_data_url_image(data_url):
+    if not data_url or "," not in data_url:
+        raise ValueError("잘못된 이미지 데이터입니다.")
+
+    header, encoded = data_url.split(",", 1)
+    if not header.startswith("data:") or ";base64" not in header:
+        raise ValueError("지원하지 않는 이미지 형식입니다.")
+
+    mime_type = header[5:].split(";")[0]
+    if mime_type not in ALLOWED_IMAGE_TYPES:
+        raise ValueError("지원하지 않는 이미지 형식입니다. PNG, JPG, WEBP, GIF만 사용할 수 있습니다.")
+
+    image_bytes = base64.b64decode(encoded)
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise ValueError("이미지 크기는 10MB 이하여야 합니다.")
+
+    return image_bytes, mime_type
+
+
+def get_image_input(uploaded_file):
+    if uploaded_file is not None:
+        return uploaded_file.getvalue(), uploaded_file.type or "image/jpeg"
+
+    pasted_data_url = st.session_state.get("pasted_image_data_url")
+    if pasted_data_url:
+        return parse_data_url_image(pasted_data_url)
+
+    return None, None
 
 
 def validate_extracted_events(events, source_label="입력"):
@@ -340,6 +373,8 @@ def render_event_cards(events, selected_platforms):
 def clear_all():
     st.session_state.input_text = ""
     st.session_state.uploaded_image = None
+    st.session_state.pasted_image_data_url = None
+    st.session_state.clipboard_paste_reset = st.session_state.get("clipboard_paste_reset", 0) + 1
     st.session_state.events = []
     st.session_state.registered = False
 
@@ -353,29 +388,44 @@ user_input = st.text_area(
     placeholder="복사한 텍스트를 붙여넣거나, 아래에서 이미지를 첨부하세요.",
 )
 
+st.caption("이미지는 파일 선택 또는 클립보드 붙여넣기(Ctrl+V)로 추가할 수 있습니다.")
+
 uploaded_image = st.file_uploader(
-    "이미지 첨부 (선택)",
+    "이미지 파일 선택 (선택)",
     type=["png", "jpg", "jpeg", "webp", "gif"],
     key="uploaded_image",
-    help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다. 텍스트와 함께 사용할 수도 있습니다.",
+    help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다.",
 )
-
 if uploaded_image is not None:
-    st.image(uploaded_image, caption="첨부된 이미지", use_container_width=True)
+    st.session_state.pasted_image_data_url = None
+
+pasted_data_url = clipboard_paste_zone(
+    label="이 영역을 클릭한 뒤 Ctrl+V (Mac: ⌘+V)로 이미지를 붙여넣으세요.",
+    key=f"clipboard_paste_{st.session_state.clipboard_paste_reset}",
+)
+if pasted_data_url:
+    st.session_state.pasted_image_data_url = pasted_data_url
+    st.session_state.uploaded_image = None
+
+preview_image = uploaded_image
+preview_caption = "선택한 이미지"
+if preview_image is None and st.session_state.pasted_image_data_url:
+    preview_image = st.session_state.pasted_image_data_url
+    preview_caption = "붙여넣은 이미지"
+
+if preview_image is not None:
+    st.image(preview_image, caption=preview_caption, use_container_width=True)
 
 if st.button("일정등록", use_container_width=True):
     has_text = bool(user_input.strip())
-    has_image = uploaded_image is not None
+    image_bytes, image_mime = get_image_input(uploaded_image)
+    has_image = image_bytes is not None
 
     if has_text or has_image:
         with st.spinner("AI 분석 중..."):
             try:
                 if has_image:
-                    events = process_image(
-                        uploaded_image.getvalue(),
-                        uploaded_image.type or "image/jpeg",
-                        user_input,
-                    )
+                    events = process_image(image_bytes, image_mime, user_input)
                 else:
                     events = process_text(user_input)
                 st.session_state.events = split_multiday_events(events)
