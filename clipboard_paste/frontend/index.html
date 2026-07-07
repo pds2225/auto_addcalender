@@ -22,7 +22,8 @@
       transition: border-color 0.15s ease, background 0.15s ease;
     }
     #zone:focus,
-    #zone.active {
+    #zone.active,
+    #zone.dragover {
       border-color: #4285f4;
       background: #eef4ff;
       color: #1a73e8;
@@ -43,7 +44,7 @@
     const zone = document.getElementById("zone");
     const status = document.getElementById("status");
     const defaultLabel =
-      "이 영역을 클릭한 뒤 Ctrl+V (Mac: ⌘+V)로 이미지를 붙여넣으세요.";
+      "여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.";
 
     function sendMessageToStreamlitClient(type, data) {
       window.parent.postMessage(
@@ -68,6 +69,24 @@
       zone.textContent = label || defaultLabel;
     }
 
+    function readImageFile(file, successMessage) {
+      if (!file || !file.type.startsWith("image/")) {
+        status.textContent = "PNG, JPG, WEBP, GIF 이미지 파일만 사용할 수 있습니다.";
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        sendDataToPython(reader.result);
+        status.textContent = successMessage;
+        setFrameHeight(130);
+      };
+      reader.onerror = () => {
+        status.textContent = "이미지를 읽지 못했습니다.";
+      };
+      reader.readAsDataURL(file);
+    }
+
     function handlePaste(event) {
       const items = event.clipboardData && event.clipboardData.items;
       if (!items) {
@@ -83,22 +102,26 @@
         if (!file) {
           continue;
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-          sendDataToPython(reader.result);
-          status.textContent = "이미지가 붙여넣어졌습니다.";
-          setFrameHeight(130);
-        };
-        reader.onerror = () => {
-          status.textContent = "이미지를 읽지 못했습니다.";
-        };
-        reader.readAsDataURL(file);
         event.preventDefault();
+        readImageFile(file, "이미지가 붙여넣어졌습니다.");
         return;
       }
 
       status.textContent =
         "클립보드에 이미지가 없습니다. 이미지를 복사한 뒤 다시 붙여넣어 주세요.";
+    }
+
+    function handleDrop(event) {
+      event.preventDefault();
+      zone.classList.remove("dragover");
+
+      const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+      if (!file) {
+        status.textContent = "놓을 이미지 파일이 없습니다.";
+        return;
+      }
+
+      readImageFile(file, "이미지 파일이 추가되었습니다.");
     }
 
     function onDataFromPython(event) {
@@ -113,6 +136,12 @@
     zone.addEventListener("focus", () => zone.classList.add("active"));
     zone.addEventListener("blur", () => zone.classList.remove("active"));
     zone.addEventListener("paste", handlePaste);
+    zone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      zone.classList.add("dragover");
+    });
+    zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+    zone.addEventListener("drop", handleDrop);
     document.body.addEventListener("paste", handlePaste);
 
     window.addEventListener("message", onDataFromPython);
