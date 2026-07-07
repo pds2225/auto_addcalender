@@ -403,7 +403,7 @@ pasted_data_url = clipboard_paste_zone(
     label="이 영역을 클릭한 뒤 Ctrl+V (Mac: ⌘+V)로 이미지를 붙여넣으세요.",
     key=f"clipboard_paste_{st.session_state.clipboard_paste_reset}",
 )
-if pasted_data_url:
+if isinstance(pasted_data_url, str) and pasted_data_url.startswith("data:image/"):
     st.session_state.pasted_image_data_url = pasted_data_url
     st.session_state.uploaded_image = None
 
