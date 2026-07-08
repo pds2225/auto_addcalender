@@ -50,6 +50,7 @@ client = OpenAI(api_key=api_key)
 KO_DAYS = ["월", "화", "수", "목", "금", "토", "일"]
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+CLIPBOARD_PASTE_KEY = "clipboard_paste_input"
 
 EVENT_EXTRACTION_RULES = """
 [출력 형식]
@@ -115,7 +116,6 @@ for key, default in {
     "registered": False,
     "pasted_image_data_url": None,
     "image_source": None,
-    "clipboard_paste_reset": 0,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -177,7 +177,17 @@ def clear_image_input():
     st.session_state.uploaded_image = None
     st.session_state.pasted_image_data_url = None
     st.session_state.image_source = None
-    st.session_state.clipboard_paste_reset = st.session_state.get("clipboard_paste_reset", 0) + 1
+    if CLIPBOARD_PASTE_KEY in st.session_state:
+        del st.session_state[CLIPBOARD_PASTE_KEY]
+
+
+def apply_pasted_image(data_url):
+    if isinstance(data_url, str) and data_url.startswith("data:image/"):
+        st.session_state.pasted_image_data_url = data_url
+        st.session_state.image_source = "paste"
+        st.session_state.uploaded_image = None
+        return True
+    return False
 
 
 def get_preview_image():
@@ -416,34 +426,36 @@ user_input = st.text_area(
     placeholder="복사한 텍스트를 붙여넣거나, 아래에서 이미지를 첨부하세요.",
 )
 
-st.caption("이미지는 **파일 선택**, **드래그 앤 드롭**, **클립보드 붙여넣기(Ctrl+V)** 로 추가할 수 있습니다.")
+@st.fragment
+def render_image_input():
+    st.caption("이미지는 **파일 선택**, **드래그 앤 드롭**, **클립보드 붙여넣기(Ctrl+V)** 로 추가할 수 있습니다.")
 
-uploaded_image = st.file_uploader(
-    "이미지 파일 선택 (선택)",
-    type=["png", "jpg", "jpeg", "webp", "gif"],
-    key="uploaded_image",
-    help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다.",
-)
-if uploaded_image is not None:
-    st.session_state.image_source = "upload"
-    st.session_state.pasted_image_data_url = None
+    uploaded_image = st.file_uploader(
+        "이미지 파일 선택 (선택)",
+        type=["png", "jpg", "jpeg", "webp", "gif"],
+        key="uploaded_image",
+        help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다.",
+    )
+    if uploaded_image is not None:
+        st.session_state.image_source = "upload"
+        st.session_state.pasted_image_data_url = None
 
-pasted_data_url = clipboard_paste_zone(
-    label="여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.",
-    key=f"clipboard_paste_{st.session_state.clipboard_paste_reset}",
-)
-if isinstance(pasted_data_url, str) and pasted_data_url.startswith("data:image/"):
-    st.session_state.pasted_image_data_url = pasted_data_url
-    st.session_state.image_source = "paste"
-    st.session_state.uploaded_image = None
+    pasted_data_url = clipboard_paste_zone(
+        label="여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.",
+        key=CLIPBOARD_PASTE_KEY,
+    )
+    apply_pasted_image(pasted_data_url)
 
-preview_image, preview_caption = get_preview_image()
+    preview_image, preview_caption = get_preview_image()
 
-if preview_image is not None:
-    st.image(preview_image, caption=preview_caption, use_container_width=True)
-    if st.button("이미지 지우기", key="clear_image_input"):
-        clear_image_input()
-        st.rerun()
+    if preview_image is not None:
+        st.image(preview_image, caption=preview_caption, use_container_width=True)
+        if st.button("이미지 지우기", key="clear_image_input"):
+            clear_image_input()
+            st.rerun(scope="fragment")
+
+
+render_image_input()
 
 if st.button("일정등록", use_container_width=True):
     has_text = bool(user_input.strip())

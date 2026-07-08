@@ -45,6 +45,8 @@
     const status = document.getElementById("status");
     const defaultLabel =
       "여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.";
+    const MAX_DIM = 1400;
+    const MAX_DATA_URL_CHARS = 2_800_000;
 
     function sendMessageToStreamlitClient(type, data) {
       window.parent.postMessage(
@@ -69,17 +71,52 @@
       zone.textContent = label || defaultLabel;
     }
 
-    function readImageFile(file, successMessage) {
+    function compressImageFile(file, successMessage) {
       if (!file || !file.type.startsWith("image/")) {
         status.textContent = "PNG, JPG, WEBP, GIF 이미지 파일만 사용할 수 있습니다.";
         return;
       }
 
+      status.textContent = "이미지 처리 중...";
+
       const reader = new FileReader();
       reader.onload = () => {
-        sendDataToPython(reader.result);
-        status.textContent = successMessage;
-        setFrameHeight(130);
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_DIM || height > MAX_DIM) {
+            const scale = MAX_DIM / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+
+          let quality = 0.85;
+          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          while (dataUrl.length > MAX_DATA_URL_CHARS && quality > 0.45) {
+            quality -= 0.1;
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+          }
+
+          if (dataUrl.length > MAX_DATA_URL_CHARS) {
+            status.textContent = "이미지가 너무 큽니다. 더 작은 이미지를 사용해 주세요.";
+            return;
+          }
+
+          sendDataToPython(dataUrl);
+          status.textContent = successMessage;
+          setFrameHeight(130);
+        };
+        img.onerror = () => {
+          status.textContent = "이미지를 읽지 못했습니다.";
+        };
+        img.src = reader.result;
       };
       reader.onerror = () => {
         status.textContent = "이미지를 읽지 못했습니다.";
@@ -103,7 +140,8 @@
           continue;
         }
         event.preventDefault();
-        readImageFile(file, "이미지가 붙여넣어졌습니다.");
+        event.stopPropagation();
+        compressImageFile(file, "이미지가 붙여넣어졌습니다. 미리보기를 확인하세요.");
         return;
       }
 
@@ -121,7 +159,7 @@
         return;
       }
 
-      readImageFile(file, "이미지 파일이 추가되었습니다.");
+      compressImageFile(file, "이미지 파일이 추가되었습니다. 미리보기를 확인하세요.");
     }
 
     function onDataFromPython(event) {
@@ -142,7 +180,6 @@
     });
     zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
     zone.addEventListener("drop", handleDrop);
-    document.body.addEventListener("paste", handlePaste);
 
     window.addEventListener("message", onDataFromPython);
     init();
