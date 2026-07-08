@@ -174,11 +174,15 @@ def get_image_input():
 
 
 def clear_image_input():
-    st.session_state.uploaded_image = None
     st.session_state.pasted_image_data_url = None
     st.session_state.image_source = None
     st.session_state.image_bytes = None
     st.session_state.image_mime = None
+
+
+def clear_image_input_callback():
+    clear_image_input()
+    st.session_state.uploaded_image = None
     if CLIPBOARD_PASTE_KEY in st.session_state:
         del st.session_state[CLIPBOARD_PASTE_KEY]
 
@@ -188,8 +192,6 @@ def sync_uploaded_image(uploaded_file):
     st.session_state.image_mime = uploaded_file.type or "image/jpeg"
     st.session_state.image_source = "upload"
     st.session_state.pasted_image_data_url = None
-    if CLIPBOARD_PASTE_KEY in st.session_state:
-        del st.session_state[CLIPBOARD_PASTE_KEY]
 
 
 def apply_pasted_image(data_url):
@@ -204,7 +206,6 @@ def apply_pasted_image(data_url):
     st.session_state.image_bytes = image_bytes
     st.session_state.image_mime = mime_type
     st.session_state.image_source = "paste"
-    st.session_state.uploaded_image = None
     return True
 
 
@@ -432,7 +433,7 @@ def render_event_cards(events, selected_platforms):
 
 def clear_all():
     st.session_state.input_text = ""
-    clear_image_input()
+    clear_image_input_callback()
     st.session_state.events = []
     st.session_state.registered = False
 
@@ -471,9 +472,7 @@ if preview_image is not None:
     source_label = "파일 첨부" if st.session_state.get("image_source") == "upload" else "붙여넣기"
     st.success(f"✅ 이미지 준비됨 ({source_label})")
     st.image(preview_image, caption=preview_caption, use_container_width=True)
-    if st.button("이미지 지우기", key="clear_image_input"):
-        clear_image_input()
-        st.rerun()
+    st.button("이미지 지우기", key="clear_image_input", on_click=clear_image_input_callback)
 
 if st.button("일정등록", use_container_width=True):
     has_text = bool(user_input.strip())
