@@ -116,6 +116,8 @@ for key, default in {
     "registered": False,
     "pasted_image_data_url": None,
     "image_source": None,
+    "image_bytes": None,
+    "image_mime": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -155,14 +157,12 @@ def parse_data_url_image(data_url):
 
 
 def get_image_input():
-    image_source = st.session_state.get("image_source")
+    image_bytes = st.session_state.get("image_bytes")
+    image_mime = st.session_state.get("image_mime")
+    if image_bytes:
+        return image_bytes, image_mime or "image/jpeg"
+
     uploaded_file = st.session_state.get("uploaded_image")
-
-    if image_source == "paste":
-        pasted_data_url = st.session_state.get("pasted_image_data_url")
-        if pasted_data_url:
-            return parse_data_url_image(pasted_data_url)
-
     if uploaded_file is not None:
         return uploaded_file.getvalue(), uploaded_file.type or "image/jpeg"
 
@@ -177,24 +177,44 @@ def clear_image_input():
     st.session_state.uploaded_image = None
     st.session_state.pasted_image_data_url = None
     st.session_state.image_source = None
+    st.session_state.image_bytes = None
+    st.session_state.image_mime = None
+    if CLIPBOARD_PASTE_KEY in st.session_state:
+        del st.session_state[CLIPBOARD_PASTE_KEY]
+
+
+def sync_uploaded_image(uploaded_file):
+    st.session_state.image_bytes = uploaded_file.getvalue()
+    st.session_state.image_mime = uploaded_file.type or "image/jpeg"
+    st.session_state.image_source = "upload"
+    st.session_state.pasted_image_data_url = None
     if CLIPBOARD_PASTE_KEY in st.session_state:
         del st.session_state[CLIPBOARD_PASTE_KEY]
 
 
 def apply_pasted_image(data_url):
-    if isinstance(data_url, str) and data_url.startswith("data:image/"):
-        st.session_state.pasted_image_data_url = data_url
-        st.session_state.image_source = "paste"
-        st.session_state.uploaded_image = None
-        return True
-    return False
+    if not isinstance(data_url, str) or not data_url.startswith("data:image/"):
+        return False
+    try:
+        image_bytes, mime_type = parse_data_url_image(data_url)
+    except ValueError:
+        return False
+
+    st.session_state.pasted_image_data_url = data_url
+    st.session_state.image_bytes = image_bytes
+    st.session_state.image_mime = mime_type
+    st.session_state.image_source = "paste"
+    st.session_state.uploaded_image = None
+    return True
 
 
 def get_preview_image():
     image_source = st.session_state.get("image_source")
-    pasted_data_url = st.session_state.get("pasted_image_data_url")
     uploaded_file = st.session_state.get("uploaded_image")
+    pasted_data_url = st.session_state.get("pasted_image_data_url")
 
+    if image_source == "upload" and uploaded_file is not None:
+        return uploaded_file, "선택한 이미지"
     if image_source == "paste" and pasted_data_url:
         return pasted_data_url, "붙여넣은 이미지"
     if uploaded_file is not None:
@@ -426,36 +446,34 @@ user_input = st.text_area(
     placeholder="복사한 텍스트를 붙여넣거나, 아래에서 이미지를 첨부하세요.",
 )
 
-@st.fragment
-def render_image_input():
-    st.caption("이미지는 **파일 선택**, **드래그 앤 드롭**, **클립보드 붙여넣기(Ctrl+V)** 로 추가할 수 있습니다.")
+st.caption("이미지는 **파일 선택** 또는 **클립보드 붙여넣기(Ctrl+V)** 로 추가할 수 있습니다.")
 
-    uploaded_image = st.file_uploader(
-        "이미지 파일 선택 (선택)",
-        type=["png", "jpg", "jpeg", "webp", "gif"],
-        key="uploaded_image",
-        help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다.",
-    )
-    if uploaded_image is not None:
-        st.session_state.image_source = "upload"
-        st.session_state.pasted_image_data_url = None
+uploaded_image = st.file_uploader(
+    "이미지 파일 선택 (선택)",
+    type=["png", "jpg", "jpeg", "webp", "gif"],
+    key="uploaded_image",
+    help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다.",
+)
 
-    pasted_data_url = clipboard_paste_zone(
-        label="여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.",
-        key=CLIPBOARD_PASTE_KEY,
-    )
-    apply_pasted_image(pasted_data_url)
+pasted_data_url = clipboard_paste_zone(
+    label="여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.",
+    key=CLIPBOARD_PASTE_KEY,
+)
 
-    preview_image, preview_caption = get_preview_image()
+if uploaded_image is not None:
+    sync_uploaded_image(uploaded_image)
+elif apply_pasted_image(pasted_data_url):
+    pass
 
-    if preview_image is not None:
-        st.image(preview_image, caption=preview_caption, use_container_width=True)
-        if st.button("이미지 지우기", key="clear_image_input"):
-            clear_image_input()
-            st.rerun(scope="fragment")
+preview_image, preview_caption = get_preview_image()
 
-
-render_image_input()
+if preview_image is not None:
+    source_label = "파일 첨부" if st.session_state.get("image_source") == "upload" else "붙여넣기"
+    st.success(f"✅ 이미지 준비됨 ({source_label})")
+    st.image(preview_image, caption=preview_caption, use_container_width=True)
+    if st.button("이미지 지우기", key="clear_image_input"):
+        clear_image_input()
+        st.rerun()
 
 if st.button("일정등록", use_container_width=True):
     has_text = bool(user_input.strip())

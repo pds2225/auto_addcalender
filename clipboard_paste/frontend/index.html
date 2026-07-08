@@ -63,8 +63,15 @@
       sendMessageToStreamlitClient("streamlit:setFrameHeight", { height: height });
     }
 
-    function sendDataToPython(data) {
-      sendMessageToStreamlitClient("streamlit:setComponentValue", data);
+    function sendDataToPython(value) {
+      window.parent.postMessage(
+        {
+          isStreamlitMessage: true,
+          type: "streamlit:setComponentValue",
+          value: value,
+        },
+        "*"
+      );
     }
 
     function setLabel(label) {
