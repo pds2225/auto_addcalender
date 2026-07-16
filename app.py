@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 from openai import OpenAI
 
 from clipboard_paste import clipboard_paste_zone
-from date_utils import normalize_date_ranges
+from date_utils import dedupe_event_titles, normalize_date_ranges
 
 st.set_page_config(page_title="Omni-Sync Mobile", layout="centered")
 st.title("📅 AI 일정 자동 등록")
@@ -72,6 +72,7 @@ EVENT_EXTRACTION_RULES = """
 - 기관명, 병원명, 회사명, 장소명, 진료과, 상담/진료/교육/회의 등 일정 성격을 함께 보존
 - 단순 동작만 남기지 말 것 (예: "진료", "회의", "교육"만 단독 사용 금지)
 - 연도(2026년 등), 차수(제7차, 제3회 등), 기수(1기, 2기 등)는 제목 식별에 필요 없을 때만 제거
+- 여러 일정을 추출할 때는 서로 다른 일정에 동일한 제목을 절대 사용하지 말 것 — 차수·회차·세션명·과목명 등 구분 정보를 제목에 유지해 제목만 봐도 각 일정이 구분되게 작성
 - 예: "세브란스병원 진료 예약" → "세브란스병원 진료"
 - 예: "2026년 제7차 희망리턴패키지 재도전교육" → "희망리턴패키지 재도전교육"
 
@@ -335,13 +336,19 @@ def split_multiday_events(events):
             continue
         start_t = start.strftime("%H%M%S")
         end_t = end.strftime("%H%M%S")
+        base_title = str(event.get('title', '')).strip()
         current = start.date()
+        day_num = 1
         while current <= end.date():
             day_event = dict(event)
+            if base_title:
+                # 날짜별로 쪼갠 일정이 캘린더에서 같은 제목으로 보이지 않게 일차 표기
+                day_event['title'] = f"{base_title} ({day_num}일차)"
             day_event['start_date'] = f"{current.strftime('%Y%m%d')}T{start_t}"
             day_event['end_date'] = f"{current.strftime('%Y%m%d')}T{end_t}"
             result.append(day_event)
             current += timedelta(days=1)
+            day_num += 1
     return result
 
 
@@ -486,7 +493,9 @@ if st.button("일정등록", use_container_width=True):
                     events = process_image(image_bytes, image_mime, user_input)
                 else:
                     events = process_text(user_input)
-                st.session_state.events = split_multiday_events(events)
+                st.session_state.events = split_multiday_events(
+                    dedupe_event_titles(events)
+                )
                 st.session_state.registered = True
             except Exception as e:
                 st.error("처리 중 오류가 발생했습니다. 입력 내용을 다시 확인해 주세요.")
