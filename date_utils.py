@@ -1,10 +1,9 @@
 import html
+import http.client
 import ipaddress
 import re
 import socket
-import urllib.error
 import urllib.parse
-import urllib.request
 from calendar import monthrange
 from datetime import datetime
 from html.parser import HTMLParser
@@ -12,6 +11,7 @@ from html.parser import HTMLParser
 
 MAX_WEBPAGE_BYTES = 2 * 1024 * 1024
 MAX_EXTRACTED_TEXT = 40000
+MAX_REDIRECTS = 5
 URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
 DEADLINE_PATTERN = re.compile(
     r"접수\s*마감|신청\s*마감|모집\s*마감|지원\s*마감|제출\s*마감|"
@@ -98,7 +98,19 @@ class _VisibleTextParser(HTMLParser):
         return "\n".join(sections)[:MAX_EXTRACTED_TEXT]
 
 
-def _validate_public_url(url: str) -> str:
+def _is_public_address(address: str) -> bool:
+    ip = ipaddress.ip_address(address.split("%", 1)[0])
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _resolve_public_url(url: str):
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         raise ValueError("http 또는 https 링크만 지원합니다.")
@@ -112,48 +124,178 @@ def _validate_public_url(url: str) -> str:
         raise ValueError("내부 네트워크 주소는 열 수 없습니다.")
 
     try:
-        addresses = {info[4][0] for info in socket.getaddrinfo(hostname, parsed.port or 443)}
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError("올바른 웹페이지 포트가 아닙니다.") from exc
+
+    try:
+        results = socket.getaddrinfo(
+            hostname,
+            port,
+            type=socket.SOCK_STREAM,
+        )
     except socket.gaierror as exc:
         raise ValueError("웹페이지 주소를 찾을 수 없습니다.") from exc
 
-    for address in addresses:
-        ip = ipaddress.ip_address(address)
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
+    endpoints = []
+    seen = set()
+    for family, socktype, proto, _, sockaddr in results:
+        if not _is_public_address(sockaddr[0]):
             raise ValueError("내부 또는 비공개 네트워크 주소는 열 수 없습니다.")
+        endpoint_key = (family, socktype, proto, sockaddr)
+        if endpoint_key not in seen:
+            endpoints.append((family, socktype, proto, sockaddr))
+            seen.add(endpoint_key)
+
+    if not endpoints:
+        raise ValueError("웹페이지 주소를 찾을 수 없습니다.")
+
+    return parsed, hostname, port, endpoints
+
+
+def _validate_public_url(url: str) -> str:
+    _resolve_public_url(url)
     return url
 
 
-class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        safe_url = _validate_public_url(urllib.parse.urljoin(req.full_url, newurl))
-        return super().redirect_request(req, fp, code, msg, headers, safe_url)
-
-
-def fetch_webpage_text(url: str) -> str:
-    safe_url = _validate_public_url(url)
-    opener = urllib.request.build_opener(_SafeRedirectHandler())
-    request = urllib.request.Request(
-        safe_url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 Chrome/126 Safari/537.36 OmniSync/1.0"
-            ),
-            "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
-            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.7",
-        },
-    )
-
+def _connect_to_endpoint(endpoint, timeout, source_address=None):
+    family, socktype, proto, sockaddr = endpoint
+    sock = socket.socket(family, socktype, proto)
     try:
-        with opener.open(request, timeout=12) as response:
-            final_url = _validate_public_url(response.geturl())
+        sock.settimeout(timeout)
+        if source_address:
+            sock.bind(source_address)
+        sock.connect(sockaddr)
+        return sock
+    except Exception:
+        sock.close()
+        raise
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """Connect to the exact address returned by the URL safety check."""
+
+    def __init__(self, host, port, endpoint, timeout):
+        super().__init__(host, port=port, timeout=timeout)
+        self._endpoint = endpoint
+
+    def connect(self):
+        self.sock = _connect_to_endpoint(
+            self._endpoint,
+            self.timeout,
+            self.source_address,
+        )
+        if self._tunnel_host:
+            self._tunnel()
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Pin the TCP peer while retaining the hostname for TLS verification."""
+
+    def __init__(self, host, port, endpoint, timeout):
+        super().__init__(host, port=port, timeout=timeout)
+        self._endpoint = endpoint
+
+    def connect(self):
+        self.sock = _connect_to_endpoint(
+            self._endpoint,
+            self.timeout,
+            self.source_address,
+        )
+        server_hostname = self.host
+        if self._tunnel_host:
+            self._tunnel()
+            server_hostname = self._tunnel_host
+        self.sock = self._context.wrap_socket(
+            self.sock,
+            server_hostname=server_hostname,
+        )
+
+
+def _host_header(hostname: str, port: int, scheme: str) -> str:
+    host = hostname.encode("idna").decode("ascii")
+    if ":" in host:
+        host = f"[{host}]"
+    default_port = 443 if scheme == "https" else 80
+    return host if port == default_port else f"{host}:{port}"
+
+
+def _request_target(parsed) -> str:
+    path = urllib.parse.quote(
+        parsed.path or "/",
+        safe="/%:@!$&'()*+,;=-._~",
+    )
+    if not parsed.query:
+        return path
+    query = urllib.parse.quote(
+        parsed.query,
+        safe="=&?/:@!$'()*+,;%-._~",
+    )
+    return f"{path}?{query}"
+
+
+def _open_pinned_response(parsed, hostname, port, endpoints):
+    headers = {
+        "Host": _host_header(hostname, port, parsed.scheme),
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/126 Safari/537.36 OmniSync/1.0"
+        ),
+        "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.7",
+        "Connection": "close",
+    }
+    connection_type = (
+        _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
+    )
+    last_error = None
+
+    for endpoint in endpoints:
+        connection = connection_type(
+            hostname,
+            port,
+            endpoint,
+            timeout=12,
+        )
+        try:
+            connection.request(
+                "GET",
+                _request_target(parsed),
+                headers=headers,
+            )
+            return connection, connection.getresponse()
+        except (OSError, http.client.HTTPException) as exc:
+            last_error = exc
+            connection.close()
+
+    raise ValueError("웹페이지 연결에 실패했습니다.") from last_error
+
+
+def _read_webpage(url: str):
+    current_url = url
+
+    for redirect_count in range(MAX_REDIRECTS + 1):
+        parsed, hostname, port, endpoints = _resolve_public_url(current_url)
+        connection = None
+        try:
+            connection, response = _open_pinned_response(
+                parsed,
+                hostname,
+                port,
+                endpoints,
+            )
+            if response.status in {301, 302, 303, 307, 308}:
+                location = response.headers.get("Location")
+                if not location:
+                    raise ValueError("웹페이지 이동 주소가 없습니다.")
+                if redirect_count >= MAX_REDIRECTS:
+                    raise ValueError("웹페이지 이동 횟수가 너무 많습니다.")
+                current_url = urllib.parse.urljoin(current_url, location)
+                continue
+
+            if response.status >= 400:
+                raise ValueError(f"웹페이지를 열 수 없습니다. HTTP {response.status}")
+
             content_type = response.headers.get_content_type()
             if content_type not in {"text/html", "application/xhtml+xml", "text/plain"}:
                 raise ValueError(f"일정 추출을 지원하지 않는 페이지 형식입니다: {content_type}")
@@ -167,10 +309,18 @@ def fetch_webpage_text(url: str) -> str:
                 decoded = raw.decode(charset, errors="replace")
             except LookupError:
                 decoded = raw.decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        raise ValueError(f"웹페이지를 열 수 없습니다. HTTP {exc.code}") from exc
-    except urllib.error.URLError as exc:
-        raise ValueError("웹페이지 연결에 실패했습니다.") from exc
+            return current_url, content_type, decoded
+        except (OSError, http.client.HTTPException) as exc:
+            raise ValueError("웹페이지 연결에 실패했습니다.") from exc
+        finally:
+            if connection is not None:
+                connection.close()
+
+    raise ValueError("웹페이지 이동 횟수가 너무 많습니다.")
+
+
+def fetch_webpage_text(url: str) -> str:
+    final_url, content_type, decoded = _read_webpage(url)
 
     if content_type == "text/plain":
         extracted = decoded.strip()[:MAX_EXTRACTED_TEXT]
@@ -195,11 +345,50 @@ def expand_url_input(text: str) -> str:
         return text
 
     url = match.group(0).rstrip(".,);]}")
-    page_text = fetch_webpage_text(url)
     supplemental = (text[: match.start()] + text[match.end() :]).strip()
+    try:
+        page_text = fetch_webpage_text(url)
+    except ValueError:
+        if supplemental:
+            return text
+        raise
     if supplemental:
         return f"{page_text}\n\n사용자 추가 입력:\n{supplemental}"
     return page_text
+
+
+def _is_deadline_focused(text: str) -> bool:
+    """Limit the single-deadline rule to a primary title or explicit user instruction."""
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return False
+
+    candidates = []
+    page_titles = [
+        line.split(":", 1)[1].strip()
+        for line in lines
+        if line.startswith("페이지 제목:") and ":" in line
+    ]
+    if page_titles:
+        candidates.extend(page_titles)
+    else:
+        first_line = next(
+            (
+                line
+                for line in lines
+                if not line.startswith("웹페이지 원본 URL:")
+                and line != "사용자 추가 입력:"
+            ),
+            "",
+        )
+        if first_line:
+            candidates.append(first_line)
+
+    for index, line in enumerate(lines):
+        if line == "사용자 추가 입력:" and index + 1 < len(lines):
+            candidates.append(lines[index + 1])
+
+    return any(DEADLINE_PATTERN.search(candidate) for candidate in candidates)
 
 
 def normalize_date_ranges(text: str) -> str:
@@ -223,7 +412,7 @@ def normalize_date_ranges(text: str) -> str:
         normalized,
     )
 
-    if DEADLINE_PATTERN.search(normalized):
+    if _is_deadline_focused(normalized):
         normalized = (
             "[중요 일정 해석 규칙]\n"
             "이 문서는 접수·신청·모집 등의 마감 공고입니다. "
