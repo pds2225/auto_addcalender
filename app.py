@@ -11,7 +11,11 @@ import streamlit.components.v1 as components
 from openai import OpenAI
 
 from clipboard_paste import clipboard_paste_zone
-from date_utils import dedupe_event_titles, normalize_date_ranges
+from date_utils import (
+    align_events_to_listed_dates,
+    dedupe_event_titles,
+    normalize_date_ranges,
+)
 
 st.set_page_config(page_title="Omni-Sync Mobile", layout="centered")
 st.title("📅 AI 일정 자동 등록")
@@ -78,6 +82,7 @@ EVENT_EXTRACTION_RULES = """
 
 [날짜 규칙]
 - 기간 표기(예: 2026-05-01~2026-05-03)는 1개의 이벤트로 생성
+- 쉼표·공백으로 날짜만 나열된 경우(예: 8월 5일, 12, 14, 20일)는 각 날짜마다 별도 이벤트 생성. 기간 하나로 묶지 말 것. '중 N일' 등 후보 표현이 있어도 나열된 모든 날짜를 각각 등록
 - 마감일, 모집 종료, 신청 마감, 접수 마감, 기한, 지원 마감 등 기한을 의미하는 경우 마지막 날짜에만 1개의 이벤트 생성 (start_date와 end_date 모두 마지막 날짜로 설정)
 - start_date: 시작일의 도착시간 또는 첫 세션 시작시간
 - end_date: 마지막 날짜의 마지막 세션 종료시간 또는 퇴실시간
@@ -586,7 +591,9 @@ if st.button("일정등록", use_container_width=True):
                 else:
                     events = process_text(user_input)
                 st.session_state.events = split_multiday_events(
-                    dedupe_event_titles(events)
+                    dedupe_event_titles(
+                        align_events_to_listed_dates(events, user_input)
+                    )
                 )
                 st.session_state.registered = True
             except Exception as e:

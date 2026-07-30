@@ -131,6 +131,95 @@ class DeadlineClassificationTests(unittest.TestCase):
         self.assertTrue(normalized.startswith("[중요 일정 해석 규칙]"))
 
 
+class CommaSeparatedDateTests(unittest.TestCase):
+    def test_expand_korean_abbreviated_day_list(self):
+        text = "(미확정) 항공우주기술 STAR 멘토링 8월 5일, 12, 14, 20, 24, 27일 중 3일"
+
+        expanded, changed = date_utils.expand_comma_separated_dates(text)
+
+        self.assertTrue(changed)
+        self.assertIn("8월 5일, 8월 12일, 8월 14일, 8월 20일, 8월 24일, 8월 27일", expanded)
+        self.assertIn("중 3일", expanded)
+        self.assertEqual(
+            date_utils.extract_comma_separated_date_lists(text),
+            [(None, 8, [5, 12, 14, 20, 24, 27])],
+        )
+
+    def test_expand_is_idempotent_after_full_dates(self):
+        text = "멘토링 8월 5일, 8월 12일, 8월 14일"
+
+        expanded, changed = date_utils.expand_comma_separated_dates(text)
+
+        self.assertFalse(changed)
+        self.assertEqual(expanded, text)
+
+    def test_normalize_injects_discrete_date_rule(self):
+        text = "스터디 8월 5일, 12, 14일"
+
+        normalized = date_utils.normalize_date_ranges(text)
+
+        self.assertTrue(normalized.startswith("[중요 일정 해석 규칙]"))
+        self.assertIn("8월 5일, 8월 12일, 8월 14일", normalized)
+
+    def test_expand_numeric_day_list(self):
+        text = "회의 8/5, 12, 14"
+
+        expanded, changed = date_utils.expand_comma_separated_dates(text)
+
+        self.assertTrue(changed)
+        self.assertIn("8월 5일, 8월 12일, 8월 14일", expanded)
+
+    def test_align_events_when_ai_returns_single_range(self):
+        source = "(미확정) 항공우주기술 STAR 멘토링 8월 5일, 12, 14, 20, 24, 27일 중 3일"
+        events = [
+            {
+                "title": "(미확정) 항공우주기술 STAR 멘토링",
+                "start_date": "20260805T090000",
+                "end_date": "20260827T180000",
+                "location": "",
+                "details": "후보 일정",
+                "details_brief": "후보 일정",
+            }
+        ]
+
+        aligned = date_utils.align_events_to_listed_dates(events, source)
+
+        self.assertEqual(len(aligned), 6)
+        self.assertEqual(
+            [e["start_date"][:8] for e in aligned],
+            ["20260805", "20260812", "20260814", "20260820", "20260824", "20260827"],
+        )
+        self.assertTrue(all(e["title"] == events[0]["title"] for e in aligned))
+
+    def test_align_keeps_correct_event_count(self):
+        source = "멘토링 8월 5일, 12, 14일"
+        events = [
+            {
+                "title": "멘토링",
+                "start_date": f"202608{day:02d}T090000",
+                "end_date": f"202608{day:02d}T180000",
+                "location": "",
+                "details": "",
+                "details_brief": "",
+            }
+            for day in (5, 12, 14)
+        ]
+
+        aligned = date_utils.align_events_to_listed_dates(events, source)
+
+        self.assertEqual(len(aligned), 3)
+        self.assertEqual(aligned, events)
+
+    def test_range_tilde_is_not_treated_as_comma_list(self):
+        text = "교육 8월 5일~7일"
+
+        expanded, changed = date_utils.expand_comma_separated_dates(text)
+
+        self.assertFalse(changed)
+        self.assertEqual(expanded, text)
+        self.assertEqual(date_utils.extract_comma_separated_date_lists(text), [])
+
+
 def public_endpoint():
     return (
         socket.AF_INET,

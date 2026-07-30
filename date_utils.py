@@ -391,6 +391,174 @@ def _is_deadline_focused(text: str) -> bool:
     return any(DEADLINE_PATTERN.search(candidate) for candidate in candidates)
 
 
+# 나열 항목의 일(day): "12일" 또는 "12" (뒤에 월/년/추가 자릿수가 오면 제외)
+# → 이미 펼쳐진 "8월 5일, 8월 12일" 이 다시 매칭되지 않게 함
+_DAY_LIST_ITEM = r"(?:\d{1,2}\s*일|\d{1,2}(?!\s*[월년])(?![-./\d]))"
+
+# 예: "8월 5일, 12, 14, 20, 24, 27일" / "2026년 8월 5일, 12일, 14일"
+_KOREAN_COMMA_DATE_LIST = re.compile(
+    r"(?:(?P<year>\d{4})\s*년\s*)?"
+    r"(?P<month>\d{1,2})\s*월\s*"
+    r"(?P<head>\d{1,2})\s*일?"
+    r"(?P<tail>(?:\s*[,，、]\s*" + _DAY_LIST_ITEM + r")+)"
+)
+
+# 예: "8/5, 12, 14, 20" / "2026-8-5, 12, 14"
+_NUMERIC_COMMA_DATE_LIST = re.compile(
+    r"(?:(?P<year>\d{4})\s*[-./]\s*)?"
+    r"(?P<month>\d{1,2})\s*[-./]\s*(?P<head>\d{1,2})"
+    r"(?P<tail>(?:\s*[,，、]\s*\d{1,2}(?![-./\d]))+)"
+)
+
+_DISCRETE_DATES_RULE = (
+    "[중요 일정 해석 규칙]\n"
+    "아래에 같은 일정의 날짜가 쉼표로 여러 개 나열되어 있습니다. "
+    "나열된 각 날짜마다 별도의 이벤트를 1개씩 생성하십시오. "
+    "시작~종료 기간 하나로 묶지 말고, '중 N일'처럼 후보·선택 표현이 있어도 "
+    "나열된 모든 날짜를 각각 일정으로 등록하십시오. "
+    "제목·장소·상세는 동일하게 유지하고 날짜만 다르게 설정하십시오.\n\n"
+)
+
+
+def _parse_days_from_chunk(chunk: str):
+    days = []
+    for token in re.findall(r"\d{1,2}", chunk):
+        day = int(token)
+        if 1 <= day <= 31:
+            days.append(day)
+    return days
+
+
+def extract_comma_separated_date_lists(text: str):
+    """쉼표로 나열된 개별 날짜 목록을 [(year|None, month, [days...]), ...] 로 반환."""
+    found = []
+    seen = set()
+
+    for match in _KOREAN_COMMA_DATE_LIST.finditer(text or ""):
+        month = int(match.group("month"))
+        if not 1 <= month <= 12:
+            continue
+        days = _parse_days_from_chunk(match.group("head") + match.group("tail"))
+        if len(days) < 2:
+            continue
+        year = int(match.group("year")) if match.group("year") else None
+        key = (year, month, tuple(days))
+        if key not in seen:
+            seen.add(key)
+            found.append((year, month, days))
+
+    for match in _NUMERIC_COMMA_DATE_LIST.finditer(text or ""):
+        month = int(match.group("month"))
+        if not 1 <= month <= 12:
+            continue
+        days = _parse_days_from_chunk(match.group("head") + match.group("tail"))
+        if len(days) < 2:
+            continue
+        year = int(match.group("year")) if match.group("year") else None
+        key = (year, month, tuple(days))
+        if key not in seen:
+            seen.add(key)
+            found.append((year, month, days))
+
+    return found
+
+
+def expand_comma_separated_dates(text: str):
+    """축약된 날짜 나열을 각 날짜가 명시된 형태로 펼친다.
+
+    Returns:
+        (expanded_text, did_expand)
+    """
+    if not text:
+        return text, False
+
+    changed = False
+
+    def repl_korean(match):
+        nonlocal changed
+        month = int(match.group("month"))
+        if not 1 <= month <= 12:
+            return match.group(0)
+        days = _parse_days_from_chunk(match.group("head") + match.group("tail"))
+        if len(days) < 2:
+            return match.group(0)
+        year = match.group("year")
+        year_prefix = f"{year}년 " if year else ""
+        changed = True
+        return ", ".join(f"{year_prefix}{month}월 {day}일" for day in days)
+
+    def repl_numeric(match):
+        nonlocal changed
+        month = int(match.group("month"))
+        if not 1 <= month <= 12:
+            return match.group(0)
+        days = _parse_days_from_chunk(match.group("head") + match.group("tail"))
+        if len(days) < 2:
+            return match.group(0)
+        year = match.group("year")
+        if year:
+            expanded = ", ".join(
+                f"{int(year):04d}-{month:02d}-{day:02d}" for day in days
+            )
+        else:
+            expanded = ", ".join(f"{month}월 {day}일" for day in days)
+        changed = True
+        return expanded
+
+    expanded = _KOREAN_COMMA_DATE_LIST.sub(repl_korean, text)
+    expanded = _NUMERIC_COMMA_DATE_LIST.sub(repl_numeric, expanded)
+    return expanded, changed
+
+
+def align_events_to_listed_dates(events, source_text: str):
+    """쉼표 나열 날짜가 있는데 이벤트가 부족하거나 기간으로 묶였으면 날짜별 이벤트로 맞춘다."""
+    lists = extract_comma_separated_date_lists(source_text or "")
+    if len(lists) != 1:
+        return events
+
+    year, month, days = lists[0]
+    if len(days) < 2:
+        return events
+
+    result_events = [dict(event) for event in (events or [])]
+    if len(result_events) == len(days):
+        return result_events
+
+    template = result_events[0] if result_events else {
+        "title": "새 일정",
+        "location": "",
+        "details": "",
+        "details_brief": "",
+        "start_date": f"{datetime.now().year}{month:02d}{days[0]:02d}T090000",
+        "end_date": f"{datetime.now().year}{month:02d}{days[0]:02d}T180000",
+    }
+
+    start_t, end_t = "090000", "180000"
+    inferred_year = year
+    try:
+        start = datetime.strptime(str(template.get("start_date", "")), "%Y%m%dT%H%M%S")
+        end = datetime.strptime(str(template.get("end_date", "")), "%Y%m%dT%H%M%S")
+        start_t = start.strftime("%H%M%S")
+        end_t = end.strftime("%H%M%S")
+        if inferred_year is None:
+            inferred_year = start.year
+    except ValueError:
+        if inferred_year is None:
+            inferred_year = datetime.now().year
+
+    aligned = []
+    last_day = monthrange(inferred_year, month)[1]
+    for day in days:
+        if day > last_day:
+            continue
+        event = dict(template)
+        event["start_date"] = f"{inferred_year:04d}{month:02d}{day:02d}T{start_t}"
+        event["end_date"] = f"{inferred_year:04d}{month:02d}{day:02d}T{end_t}"
+        aligned.append(event)
+
+    return aligned if aligned else result_events
+
+
 def normalize_date_ranges(text: str) -> str:
     normalized = expand_url_input(text)
 
@@ -412,7 +580,11 @@ def normalize_date_ranges(text: str) -> str:
         normalized,
     )
 
-    if _is_deadline_focused(normalized):
+    normalized, discrete_expanded = expand_comma_separated_dates(normalized)
+
+    if discrete_expanded:
+        normalized = _DISCRETE_DATES_RULE + normalized
+    elif _is_deadline_focused(normalized):
         normalized = (
             "[중요 일정 해석 규칙]\n"
             "이 문서는 접수·신청·모집 등의 마감 공고입니다. "
