@@ -409,6 +409,98 @@ def make_ics_filename(title, index=None):
     return f"{base}.ics"
 
 
+def render_bulk_register_section(events, selected_platforms):
+    """선택한 일정의 구글 등록 화면을 한 번에 연다."""
+    if len(events) < 2 or "구글 캘린더" not in selected_platforms:
+        return
+
+    st.subheader("⚡ 일괄 등록")
+
+    bulk_options = {
+        i: f"{event.get('title', '새 일정')} · {fmt(event['start_date'])}"
+        for i, event in enumerate(events)
+    }
+    selected_indices = st.multiselect(
+        "일괄 열기할 일정",
+        options=list(bulk_options.keys()),
+        default=list(bulk_options.keys()),
+        format_func=lambda idx: bulk_options[idx],
+        key="bulk_register_indices",
+        help="이미 개별 등록한 일정은 체크를 해제하세요.",
+    )
+    selected_events = [events[i] for i in selected_indices]
+    count = len(selected_events)
+    urls_json = json.dumps(
+        [build_calendar_url(event) for event in selected_events],
+        ensure_ascii=False,
+    )
+    disabled_attr = "disabled" if count == 0 else ""
+
+    bulk_open_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 2px 0;
+  }}
+  button {{
+    width: 100%;
+    background: #1a73e8;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }}
+  button:disabled {{
+    background: #9aa0a6;
+    cursor: not-allowed;
+  }}
+  #bulk-msg {{
+    margin-top: 8px;
+    font-size: 12px;
+    color: #5f6368;
+    line-height: 1.5;
+  }}
+</style>
+</head>
+<body>
+<button {disabled_attr} onclick="openAllGoogle()">구글 일괄 열기 ({count}개)</button>
+<p id="bulk-msg">팝업이 막히면 브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.</p>
+<script>
+var urls = {urls_json};
+function openAllGoogle() {{
+  var msg = document.getElementById('bulk-msg');
+  if (!urls.length) {{
+    msg.textContent = '열 일정을 선택해 주세요.';
+    return;
+  }}
+  var opened = 0;
+  urls.forEach(function(url) {{
+    var win = window.open(url, '_blank');
+    if (win) opened += 1;
+  }});
+  if (opened === 0) {{
+    msg.textContent = '팝업이 차단되었습니다. 팝업을 허용한 뒤 다시 눌러 주세요.';
+  }} else if (opened < urls.length) {{
+    msg.textContent = opened + '개만 열렸습니다. 팝업을 허용하면 나머지도 열립니다.';
+  }} else {{
+    msg.textContent = opened + '개 등록 화면을 열었습니다.';
+  }}
+}}
+</script>
+</body>
+</html>
+"""
+    components.html(bulk_open_html, height=88)
+
+
 def render_event_cards(events, selected_platforms):
     for i, event in enumerate(events):
         with st.container(border=True):
@@ -518,9 +610,14 @@ if st.session_state.registered and st.session_state.events:
         default=["구글 캘린더"],
         help="카카오는 .ics 파일 다운로드 후 카카오 캘린더에서 가져오기로 등록할 수 있습니다.",
     )
-    st.caption("선택한 캘린더 방식으로 각 일정을 등록하세요.")
+    st.caption("여러 일정이면 위에서 구글 일괄 열기를 사용하세요.")
+
+    # ── 일괄 등록 ─────────────────────────────────────
+    render_bulk_register_section(events, selected_platforms)
 
     # ── 등록된 일정 카드 ──────────────────────────────
+    if len(events) >= 2:
+        st.markdown("##### 일정별 개별 등록")
     render_event_cards(events, selected_platforms)
 
     # ── 공유 영역 (완전 클라이언트 사이드) ───────────────
