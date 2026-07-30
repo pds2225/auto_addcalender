@@ -410,15 +410,11 @@ def make_ics_filename(title, index=None):
 
 
 def render_bulk_register_section(events, selected_platforms):
-    """여러 일정을 한 번에 등록할 수 있는 일괄 등록 UI."""
+    """여러 일정을 .ics 하나로 한 번에 등록할 수 있는 일괄 등록 UI."""
     if len(events) < 2 or not selected_platforms:
         return
 
     st.subheader("⚡ 일괄 등록")
-    st.caption(
-        "일정마다 버튼을 누르지 않아도 됩니다. "
-        "선택한 일정을 .ics 파일 하나로 내려받아 캘린더에 한 번에 넣을 수 있습니다."
-    )
 
     bulk_options = {
         i: f"{event.get('title', '새 일정')} · {fmt(event['start_date'])}"
@@ -430,10 +426,10 @@ def render_bulk_register_section(events, selected_platforms):
         default=list(bulk_options.keys()),
         format_func=lambda idx: bulk_options[idx],
         key="bulk_register_indices",
+        help="이미 개별 등록한 일정은 체크를 해제하세요. 선택된 일정만 파일에 포함됩니다.",
     )
     selected_events = [events[i] for i in selected_indices]
     count = len(selected_events)
-    disabled = count == 0
 
     st.download_button(
         f"선택한 {count}개 일괄 등록 (.ics)",
@@ -441,87 +437,13 @@ def render_bulk_register_section(events, selected_platforms):
         file_name="bulk_calendar_events.ics",
         mime="text/calendar",
         use_container_width=True,
-        disabled=disabled,
+        disabled=count == 0,
         key="bulk_ics_download",
-        help=(
-            "내려받은 .ics 파일을 열면 휴대폰 캘린더·카카오 캘린더에 바로 넣을 수 있습니다. "
-            "구글 캘린더는 설정 > 가져오기/내보내기 > 가져오기 로 한 번에 등록하세요."
-        ),
     )
-
-    if "구글 캘린더" in selected_platforms:
-        urls_json = json.dumps(
-            [build_calendar_url(event) for event in selected_events],
-            ensure_ascii=False,
-        )
-        bulk_open_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    padding: 2px 0;
-  }}
-  button {{
-    width: 100%;
-    background: #1a73e8;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 12px 14px;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-  }}
-  button:disabled {{
-    background: #9aa0a6;
-    cursor: not-allowed;
-  }}
-  #bulk-msg {{
-    margin-top: 8px;
-    font-size: 12px;
-    color: #5f6368;
-    line-height: 1.5;
-    white-space: pre-wrap;
-  }}
-</style>
-</head>
-<body>
-<button id="bulk-open-btn" {"disabled" if disabled else ""} onclick="openAllGoogle()">
-  구글 등록 화면 일괄 열기 ({count}개)
-</button>
-<p id="bulk-msg">팝업이 차단되면 브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요. 열린 각 탭에서 저장을 눌러야 등록됩니다.</p>
-<script>
-var urls = {urls_json};
-function openAllGoogle() {{
-  var msg = document.getElementById('bulk-msg');
-  if (!urls.length) {{
-    msg.textContent = '일괄 열 일정을 선택해 주세요.';
-    return;
-  }}
-  var opened = 0;
-  urls.forEach(function(url) {{
-    var win = window.open(url, '_blank');
-    if (win) opened += 1;
-  }});
-  if (opened === 0) {{
-    msg.textContent = '팝업이 모두 차단되었습니다. 팝업을 허용하거나 위의 .ics 파일로 일괄 등록해 주세요.';
-  }} else if (opened < urls.length) {{
-    msg.textContent = opened + '개만 열렸습니다. 나머지는 팝업 차단일 수 있으니 .ics 일괄 등록을 권장합니다.\\n열린 탭에서는 각각 저장을 눌러 주세요.';
-  }} else {{
-    msg.textContent = opened + '개 등록 화면을 열었습니다. 각 탭에서 저장을 눌러 주세요.';
-  }}
-}}
-</script>
-</body>
-</html>
-"""
-        components.html(bulk_open_html, height=96)
-
-    st.caption("아래에서 일정별로 개별 등록할 수도 있습니다.")
+    st.caption(
+        "파일을 열면 한 번에 등록됩니다. "
+        "구글 캘린더는 설정 → 가져오기에서도 등록할 수 있습니다."
+    )
 
 
 def render_event_cards(events, selected_platforms):
@@ -633,10 +555,7 @@ if st.session_state.registered and st.session_state.events:
         default=["구글 캘린더"],
         help="카카오는 .ics 파일 다운로드 후 카카오 캘린더에서 가져오기로 등록할 수 있습니다.",
     )
-    st.caption(
-        "여러 일정이면 아래 일괄 등록을 먼저 사용하세요. "
-        "일정별 버튼은 하나만 따로 넣을 때 사용합니다."
-    )
+    st.caption("여러 일정이면 위에서 일괄 등록하세요. 하나만 넣을 때는 아래 개별 버튼을 쓰세요.")
 
     # ── 일괄 등록 ─────────────────────────────────────
     render_bulk_register_section(events, selected_platforms)
