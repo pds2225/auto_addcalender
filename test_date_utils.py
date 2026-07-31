@@ -220,6 +220,111 @@ class CommaSeparatedDateTests(unittest.TestCase):
         self.assertEqual(date_utils.extract_comma_separated_date_lists(text), [])
 
 
+class SanitizeLocationTests(unittest.TestCase):
+    def test_clears_org_name_for_online_recruitment(self):
+        source = (
+            "서울AI허브 입주기업 모집\n"
+            "모집기간: 2026-07-01 ~ 2026-07-31\n"
+            "모집방법: 온라인 접수\n"
+            "문의: 02-1234-5678"
+        )
+        events = [
+            {
+                "title": "서울AI허브 입주기업 모집",
+                "start_date": "20260731T090000",
+                "end_date": "20260731T180000",
+                "location": "서울AI허브",
+                "details": "모집방법: 온라인 접수\n문의: 02-1234-5678",
+                "details_brief": "모집방법: 온라인 접수",
+            }
+        ]
+
+        cleaned = date_utils.sanitize_event_locations(events, source)
+
+        self.assertEqual(cleaned[0]["location"], "")
+        self.assertEqual(cleaned[0]["title"], events[0]["title"])
+        self.assertIn("온라인 접수", cleaned[0]["details"])
+
+    def test_clears_ai_hub_variant_location(self):
+        source = "서울 ai 허브 입주기업모집\n모집방법:온라인접수"
+        events = [
+            {
+                "title": "서울AI허브 입주기업모집",
+                "start_date": "20260731T090000",
+                "end_date": "20260731T180000",
+                "location": "AI허브",
+                "details": "모집방법: 온라인접수",
+                "details_brief": "온라인접수",
+            }
+        ]
+
+        cleaned = date_utils.sanitize_event_locations(events, source)
+
+        self.assertEqual(cleaned[0]["location"], "")
+
+    def test_clears_online_as_location_label(self):
+        events = [
+            {
+                "title": "스타트업 모집",
+                "start_date": "20260731T090000",
+                "end_date": "20260731T180000",
+                "location": "온라인",
+                "details": "모집방법: 온라인 신청",
+                "details_brief": "온라인 신청",
+            }
+        ]
+
+        cleaned = date_utils.sanitize_event_locations(events, "")
+
+        self.assertEqual(cleaned[0]["location"], "")
+
+    def test_keeps_real_venue_when_present(self):
+        source = (
+            "세브란스병원 진료\n"
+            "장소: 세브란스병원 본관 3층\n"
+            "주소: 서울특별시 서대문구 연세로 50-1"
+        )
+        events = [
+            {
+                "title": "세브란스병원 진료",
+                "start_date": "20260801T100000",
+                "end_date": "20260801T110000",
+                "location": "서울특별시 서대문구 연세로 50-1 세브란스병원 본관 3층",
+                "details": "진료 예약",
+                "details_brief": "본관 3층",
+            }
+        ]
+
+        cleaned = date_utils.sanitize_event_locations(events, source)
+
+        self.assertEqual(
+            cleaned[0]["location"],
+            "서울특별시 서대문구 연세로 50-1 세브란스병원 본관 3층",
+        )
+
+    def test_keeps_venue_even_if_online_also_mentioned(self):
+        source = (
+            "설명회 안내\n"
+            "모집방법: 온라인 접수\n"
+            "개최장소: 서울시청 시민홀\n"
+            "8월 10일 14시"
+        )
+        events = [
+            {
+                "title": "설명회",
+                "start_date": "20260810T140000",
+                "end_date": "20260810T160000",
+                "location": "서울시청 시민홀",
+                "details": "모집방법: 온라인 접수 / 개최장소: 서울시청 시민홀",
+                "details_brief": "서울시청 시민홀",
+            }
+        ]
+
+        cleaned = date_utils.sanitize_event_locations(events, source)
+
+        self.assertEqual(cleaned[0]["location"], "서울시청 시민홀")
+
+
 def public_endpoint():
     return (
         socket.AF_INET,

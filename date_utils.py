@@ -18,6 +18,26 @@ DEADLINE_PATTERN = re.compile(
     r"접수\s*종료|신청\s*종료|모집\s*종료|마감일|신청\s*기한|제출\s*기한",
     re.IGNORECASE,
 )
+ONLINE_METHOD_PATTERN = re.compile(
+    r"(?:모집|접수|신청|지원)\s*방법\s*[:：]?\s*온라인|"
+    r"온라인\s*(?:접수|신청|지원|등록)|"
+    r"비대면\s*(?:접수|신청|지원)",
+    re.IGNORECASE,
+)
+VENUE_MARKER_PATTERN = re.compile(
+    r"(?:개최|행사|교육|설명회|면접)\s*장소|"
+    r"(?<![가-힣])장소\s*[:：]|주소\s*[:：]|오시는\s*길|"
+    r"\d+\s*층|[A-Za-z]?\d+\s*호실?|강의실|회의실|"
+    r"(?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|"
+    r"울산광역시|세종특별자치시|경기도|강원특별자치도|충청북도|충청남도|"
+    r"전북특별자치도|전라북도|전라남도|경상북도|경상남도|제주특별자치도|"
+    r"서울시|부산시|대구시|인천시|광주시|대전시|울산시)\s*\S+",
+    re.IGNORECASE,
+)
+ONLINE_ONLY_LOCATION_PATTERN = re.compile(
+    r"^(?:온라인|비대면|온라인\s*접수|온라인\s*신청|온라인\s*지원)$",
+    re.IGNORECASE,
+)
 
 
 class _VisibleTextParser(HTMLParser):
@@ -605,6 +625,65 @@ def _start_label(event, fmt):
         ).strftime(fmt)
     except ValueError:
         return None
+
+
+def _has_online_application_method(text: str) -> bool:
+    return bool(ONLINE_METHOD_PATTERN.search(text or ""))
+
+
+def _has_explicit_venue(text: str) -> bool:
+    return bool(VENUE_MARKER_PATTERN.search(text or ""))
+
+
+def _location_looks_like_online_method(location: str) -> bool:
+    return bool(ONLINE_ONLY_LOCATION_PATTERN.match((location or "").strip()))
+
+
+def _location_is_title_org_name(location: str, title: str) -> bool:
+    """제목 속 기관/프로그램명만 location에 들어간 경우를 감지한다."""
+    loc = re.sub(r"\s+", "", (location or "").strip())
+    ttl = re.sub(r"\s+", "", (title or "").strip())
+    if not loc or not ttl:
+        return False
+    if loc in ttl or ttl in loc:
+        return True
+    # "서울AI허브" vs "서울 AI 허브 입주기업 모집" 등 공백·접미사 변형
+    for noise in ("입주기업모집", "입주기업", "모집", "공고", "신청", "접수", "마감"):
+        ttl = ttl.replace(noise, "")
+    return bool(ttl) and (loc in ttl or ttl in loc)
+
+
+def sanitize_event_locations(events, source_text: str = ""):
+    """온라인 접수 공고에서 기관명을 장소로 잘못 넣은 경우 location을 비운다.
+
+    - 모집/접수 방법이 온라인이고 실제 방문 장소 표기가 없으면 location 제거
+    - location이 '온라인' 등 접수방법 표현이면 제거 (details에 남김)
+    원본 리스트는 수정하지 않는다.
+    """
+    source = source_text or ""
+    online_only = _has_online_application_method(source) and not _has_explicit_venue(source)
+    result = []
+    for event in events or []:
+        cleaned = dict(event)
+        location = str(cleaned.get("location", "") or "").strip()
+        title = str(cleaned.get("title", "") or "")
+        details_blob = " ".join(
+            [
+                str(cleaned.get("details", "") or ""),
+                str(cleaned.get("details_brief", "") or ""),
+            ]
+        )
+        event_online = _has_online_application_method(details_blob)
+        should_clear = False
+        if location and _location_looks_like_online_method(location):
+            should_clear = True
+        elif location and (online_only or event_online) and not _has_explicit_venue(source):
+            if _location_is_title_org_name(location, title) or online_only:
+                should_clear = True
+        if should_clear:
+            cleaned["location"] = ""
+        result.append(cleaned)
+    return result
 
 
 def dedupe_event_titles(events):
