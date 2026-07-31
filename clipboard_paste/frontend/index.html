@@ -2,24 +2,61 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <style>
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #paste-btn {
+      display: block;
+      width: 100%;
+      padding: 14px 12px;
+      border: none;
+      border-radius: 10px;
+      background: #1a73e8;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: -0.2px;
+    }
+    #paste-btn:active {
+      background: #1558b0;
+    }
+    #paste-btn:disabled {
+      opacity: 0.7;
+      cursor: wait;
     }
     #zone {
-      min-height: 96px;
-      padding: 16px;
+      min-height: 88px;
+      padding: 14px 12px;
       border: 2px dashed #9aa0a6;
       border-radius: 10px;
       background: #f8f9fa;
       color: #5f6368;
       text-align: center;
-      line-height: 1.5;
-      cursor: pointer;
+      line-height: 1.45;
+      font-size: 13px;
+      cursor: text;
       outline: none;
+      white-space: pre-wrap;
+      word-break: keep-all;
       transition: border-color 0.15s ease, background 0.15s ease;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    #zone:empty:before {
+      content: attr(data-placeholder);
+      color: #5f6368;
+      pointer-events: none;
     }
     #zone:focus,
     #zone.active,
@@ -28,25 +65,58 @@
       background: #eef4ff;
       color: #1a73e8;
     }
+    #hint {
+      font-size: 11px;
+      color: #80868b;
+      text-align: center;
+      line-height: 1.4;
+    }
     #status {
-      margin-top: 8px;
       font-size: 12px;
       color: #188038;
       text-align: center;
       min-height: 16px;
+      line-height: 1.4;
+    }
+    #status.error {
+      color: #d93025;
     }
   </style>
 </head>
 <body>
-  <div id="zone" tabindex="0"></div>
-  <div id="status"></div>
+  <div class="wrap">
+    <button id="paste-btn" type="button">클립보드에서 붙여넣기</button>
+    <div
+      id="zone"
+      contenteditable="true"
+      tabindex="0"
+      role="textbox"
+      aria-label="이미지 붙여넣기 영역"
+      data-placeholder=""
+    ></div>
+    <div id="hint"></div>
+    <div id="status"></div>
+  </div>
   <script>
+    const pasteBtn = document.getElementById("paste-btn");
     const zone = document.getElementById("zone");
+    const hint = document.getElementById("hint");
     const status = document.getElementById("status");
-    const defaultLabel =
-      "여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.";
+
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent));
+
+    const defaultLabel = isMobile
+      ? "여기를 길게 누른 뒤 '붙여넣기'를 선택하세요."
+      : "여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.";
+
+    const defaultHint = isMobile
+      ? "이미지가 안 되면 위 버튼을 눌러 보세요. HTTPS(배포 환경)에서 가장 잘 동작합니다."
+      : "PC: Ctrl+V / 드래그앤드롭 · 모바일: 버튼 또는 길게 눌러 붙여넣기";
+
     const MAX_DIM = 1400;
     const MAX_DATA_URL_CHARS = 2_800_000;
+    const FRAME_HEIGHT = isMobile ? 210 : 190;
 
     function sendMessageToStreamlitClient(type, data) {
       window.parent.postMessage(
@@ -74,17 +144,32 @@
       );
     }
 
+    function setStatus(message, isError) {
+      status.textContent = message || "";
+      status.classList.toggle("error", !!isError);
+      setFrameHeight(FRAME_HEIGHT);
+    }
+
     function setLabel(label) {
-      zone.textContent = label || defaultLabel;
+      const text = label || defaultLabel;
+      zone.setAttribute("data-placeholder", text);
+      if (!zone.textContent.trim()) {
+        zone.textContent = "";
+      }
+    }
+
+    function resetZone() {
+      zone.textContent = "";
     }
 
     function compressImageFile(file, successMessage) {
-      if (!file || !file.type.startsWith("image/")) {
-        status.textContent = "PNG, JPG, WEBP, GIF 이미지 파일만 사용할 수 있습니다.";
+      if (!file || !String(file.type || "").startsWith("image/")) {
+        setStatus("PNG, JPG, WEBP, GIF 이미지 파일만 사용할 수 있습니다.", true);
         return;
       }
 
-      status.textContent = "이미지 처리 중...";
+      pasteBtn.disabled = true;
+      setStatus("이미지 처리 중...");
 
       const reader = new FileReader();
       reader.onload = () => {
@@ -111,49 +196,61 @@
             dataUrl = canvas.toDataURL("image/jpeg", quality);
           }
 
+          pasteBtn.disabled = false;
+
           if (dataUrl.length > MAX_DATA_URL_CHARS) {
-            status.textContent = "이미지가 너무 큽니다. 더 작은 이미지를 사용해 주세요.";
+            setStatus("이미지가 너무 큽니다. 더 작은 이미지를 사용해 주세요.", true);
             return;
           }
 
           sendDataToPython(dataUrl);
-          status.textContent = successMessage;
-          setFrameHeight(130);
+          resetZone();
+          setStatus(successMessage);
         };
         img.onerror = () => {
-          status.textContent = "이미지를 읽지 못했습니다.";
+          pasteBtn.disabled = false;
+          setStatus("이미지를 읽지 못했습니다.", true);
         };
         img.src = reader.result;
       };
       reader.onerror = () => {
-        status.textContent = "이미지를 읽지 못했습니다.";
+        pasteBtn.disabled = false;
+        setStatus("이미지를 읽지 못했습니다.", true);
       };
       reader.readAsDataURL(file);
     }
 
+    function extractImageFromClipboardItems(items) {
+      if (!items) {
+        return null;
+      }
+      for (const item of items) {
+        if (item.type && item.type.startsWith("image/")) {
+          const file = item.getAsFile && item.getAsFile();
+          if (file) {
+            return file;
+          }
+        }
+      }
+      return null;
+    }
+
     function handlePaste(event) {
       const items = event.clipboardData && event.clipboardData.items;
-      if (!items) {
-        status.textContent = "클립보드 접근이 지원되지 않는 환경입니다.";
-        return;
-      }
-
-      for (const item of items) {
-        if (!item.type.startsWith("image/")) {
-          continue;
-        }
-        const file = item.getAsFile();
-        if (!file) {
-          continue;
-        }
+      const file = extractImageFromClipboardItems(items);
+      if (file) {
         event.preventDefault();
         event.stopPropagation();
         compressImageFile(file, "이미지가 붙여넣어졌습니다. 미리보기를 확인하세요.");
         return;
       }
 
-      status.textContent =
-        "클립보드에 이미지가 없습니다. 이미지를 복사한 뒤 다시 붙여넣어 주세요.";
+      // 텍스트만 붙은 경우 영역이 오염되지 않게 막고 안내
+      if (event.clipboardData && event.clipboardData.getData("text")) {
+        event.preventDefault();
+      }
+      setStatus("클립보드에 이미지가 없습니다. 이미지를 복사한 뒤 다시 붙여넣어 주세요.", true);
+      resetZone();
     }
 
     function handleDrop(event) {
@@ -162,11 +259,60 @@
 
       const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
       if (!file) {
-        status.textContent = "놓을 이미지 파일이 없습니다.";
+        setStatus("놓을 이미지 파일이 없습니다.", true);
         return;
       }
 
       compressImageFile(file, "이미지 파일이 추가되었습니다. 미리보기를 확인하세요.");
+    }
+
+    async function readClipboardViaApi() {
+      if (!navigator.clipboard || typeof navigator.clipboard.read !== "function") {
+        setStatus(
+          "이 브라우저는 버튼 붙여넣기를 지원하지 않습니다. 아래 영역을 길게 눌러 '붙여넣기'를 선택하세요.",
+          true
+        );
+        zone.focus();
+        return;
+      }
+
+      pasteBtn.disabled = true;
+      setStatus("클립보드 읽는 중...");
+
+      try {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          const imageType = (item.types || []).find((type) => type.startsWith("image/"));
+          if (!imageType) {
+            continue;
+          }
+          const blob = await item.getType(imageType);
+          const file = new File([blob], "clipboard-image." + imageType.split("/")[1], {
+            type: imageType,
+          });
+          compressImageFile(file, "클립보드 이미지를 붙여넣었습니다. 미리보기를 확인하세요.");
+          return;
+        }
+        pasteBtn.disabled = false;
+        setStatus("클립보드에 이미지가 없습니다. 이미지를 복사한 뒤 다시 시도하세요.", true);
+      } catch (err) {
+        pasteBtn.disabled = false;
+        const name = err && err.name;
+        if (name === "NotAllowedError") {
+          setStatus(
+            "클립보드 권한이 필요합니다. 허용 후 다시 누르거나, 아래 영역을 길게 눌러 붙여넣으세요.",
+            true
+          );
+        } else if (name === "DataError" || name === "NotFoundError") {
+          setStatus("클립보드에 이미지가 없습니다. 이미지를 복사한 뒤 다시 시도하세요.", true);
+        } else {
+          setStatus(
+            "클립보드를 읽지 못했습니다. 아래 영역을 길게 눌러 '붙여넣기'를 선택하세요.",
+            true
+          );
+        }
+        zone.focus();
+      }
     }
 
     function onDataFromPython(event) {
@@ -174,12 +320,23 @@
         return;
       }
       setLabel(event.data.args && event.data.args.label);
-      setFrameHeight(130);
+      setFrameHeight(FRAME_HEIGHT);
     }
+
+    pasteBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      readClipboardViaApi();
+    });
 
     zone.addEventListener("click", () => zone.focus());
     zone.addEventListener("focus", () => zone.classList.add("active"));
-    zone.addEventListener("blur", () => zone.classList.remove("active"));
+    zone.addEventListener("blur", () => {
+      zone.classList.remove("active");
+      // contenteditable에 남은 텍스트/이미지 노드 정리
+      if (zone.querySelector("img") || zone.textContent.trim()) {
+        resetZone();
+      }
+    });
     zone.addEventListener("paste", handlePaste);
     zone.addEventListener("dragover", (event) => {
       event.preventDefault();
@@ -188,10 +345,35 @@
     zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
     zone.addEventListener("drop", handleDrop);
 
+    // 모바일에서 영역에 이미지가 삽입된 경우도 감지
+    zone.addEventListener("input", () => {
+      const img = zone.querySelector("img");
+      if (!img) {
+        return;
+      }
+      const src = img.getAttribute("src") || "";
+      if (src.startsWith("data:image/")) {
+        sendDataToPython(src);
+        resetZone();
+        setStatus("이미지가 붙여넣어졌습니다. 미리보기를 확인하세요.");
+        return;
+      }
+      if (src.startsWith("blob:")) {
+        fetch(src)
+          .then((res) => res.blob())
+          .then((blob) => {
+            const file = new File([blob], "pasted-image", { type: blob.type || "image/png" });
+            compressImageFile(file, "이미지가 붙여넣어졌습니다. 미리보기를 확인하세요.");
+          })
+          .catch(() => setStatus("이미지를 읽지 못했습니다.", true));
+      }
+    });
+
     window.addEventListener("message", onDataFromPython);
     init();
     setLabel(defaultLabel);
-    setFrameHeight(130);
+    hint.textContent = defaultHint;
+    setFrameHeight(FRAME_HEIGHT);
   </script>
 </body>
 </html>

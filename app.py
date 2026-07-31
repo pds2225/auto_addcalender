@@ -551,7 +551,10 @@ user_input = st.text_area(
     placeholder="복사한 텍스트를 붙여넣거나, 아래에서 이미지를 첨부하세요.",
 )
 
-st.caption("이미지는 **파일 선택** 또는 **클립보드 붙여넣기(Ctrl+V)** 로 추가할 수 있습니다.")
+st.caption(
+    "이미지는 **파일 선택** 또는 **클립보드 붙여넣기**로 추가할 수 있습니다. "
+    "모바일에서는 '클립보드에서 붙여넣기' 버튼 또는 영역을 길게 눌러 붙여넣으세요."
+)
 
 uploaded_image = st.file_uploader(
     "이미지 파일 선택 (선택)",
@@ -561,7 +564,7 @@ uploaded_image = st.file_uploader(
 )
 
 pasted_data_url = clipboard_paste_zone(
-    label="여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.",
+    label="모바일: 버튼 또는 길게 눌러 붙여넣기 · PC: Ctrl+V / 드래그앤드롭",
     key=CLIPBOARD_PASTE_KEY,
 )
 
