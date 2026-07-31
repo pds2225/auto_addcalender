@@ -8,7 +8,7 @@ _clipboard_paste = components.declare_component("clipboard_paste", path=_FRONTEN
 
 
 def clipboard_paste_zone(
-    label="여기를 클릭한 뒤 Ctrl+V(⌘+V)로 붙여넣거나, 이미지 파일을 끌어다 놓으세요.",
+    label="모바일: 버튼 또는 길게 눌러 붙여넣기 · PC: Ctrl+V / 드래그앤드롭",
     key=None,
 ):
     return _clipboard_paste(label=label, key=key, default=None)
