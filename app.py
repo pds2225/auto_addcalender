@@ -729,12 +729,12 @@ events.forEach(function(e, i) {{
 }});
 
 async function doShare() {{
-  var lines = ['일정 공유'];
+  var lines = [];
   var hasSelected = false;
   events.forEach(function(e, i) {{
     if (document.getElementById('c' + i).checked) {{
+      if (hasSelected) lines.push('');
       hasSelected = true;
-      lines.push('');
       lines.push('[' + e.title + ']');
       lines.push('일시: ' + e.date);
       if (e.location) lines.push('장소: ' + e.location);
@@ -745,10 +745,6 @@ async function doShare() {{
     document.getElementById('msg').textContent = '⚠️ 공유할 일정을 선택해 주세요.';
     return;
   }}
-
-  lines.push('');
-  lines.push('캘린더 등록 파일:');
-  lines.push('첨부된 .ics 파일을 열어 캘린더에 저장하세요.');
 
   var text = lines.join('\\n');
   var msg = document.getElementById('msg');
