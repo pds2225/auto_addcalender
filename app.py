@@ -15,6 +15,7 @@ from date_utils import (
     align_events_to_listed_dates,
     dedupe_event_titles,
     normalize_date_ranges,
+    sanitize_event_locations,
 )
 
 st.set_page_config(page_title="Omni-Sync Mobile", layout="centered")
@@ -90,21 +91,27 @@ EVENT_EXTRACTION_RULES = """
 - 시간이 전혀 없는 경우 start=09:00, end=18:00으로 설정
 
 [장소 규칙]
-- location에는 원문에 나온 주소, 기관명, 건물명, 층, 호실을 최대한 함께 포함
+- location에는 실제로 찾아가거나 참석하는 장소만 넣는다 (주소, 건물명, 층, 호실, 강의실 등)
 - 주소가 있으면 주소를 반드시 포함 (예: "서울시 서대문구 ... 세브란스병원 본관 3층")
-- 기관명만 있고 주소가 없으면 기관명과 세부 위치(층/호실/강의실)를 포함
+- 기관명만 있고 주소가 없으면, 그 기관이 실제 방문/개최 장소일 때만 기관명과 세부 위치(층/호실/강의실)를 포함
 - 장소 정보가 여러 줄로 나뉘어 있어도 하나의 location 문자열로 합쳐서 작성
+- 제목·프로그램·주최·주관에 나온 기관명만으로 location을 채우지 말 것
+- 입주·입사·선정·지원 대상 시설명(예: "서울AI허브 입주기업 모집"의 AI허브)은 행사 장소가 아님 → location에 넣지 말 것
+- 모집방법·접수방법이 온라인 접수/온라인 신청/온라인 지원이고, 개최장소·주소·층·호실 등 실제 방문 장소가 없으면 location은 빈 문자열("")로 둔다. "온라인"을 장소로 넣지 말 것
+- 신청·접수 방법은 location이 아니라 details에만 기록
 
 [details 규칙]
 - 참석자에게 필요한 모든 정보를 원문 그대로 빠짐없이 포함할 것
 - 포함: 세션·과목·시간표, 전체 장소/주소(건물명·층·호실 포함), 준비물, 유의사항, 문의처, 연락처, 전화번호, 이메일, 신청 방법, 지참 서류 등
 - 문의처, 연락처, 전화번호, 이메일이 원문에 있으면 details에 반드시 포함
+- 모집방법·접수방법이 있으면 details에 반드시 포함 (예: "모집방법: 온라인 접수")
 - 제외: 기관 소개·홍보 문구·행사 취지 설명 등 참석자 행동과 무관한 내용
 - 내용을 요약하거나 임의로 생략하지 말 것
 
 [details_brief 규칙]
 - details 내용을 180자 이내로 압축 요약
-- 우선순위: ① 전체 장소/주소 ② 문의처·연락처·전화번호·이메일 ③ 준비물·지참 서류 ④ 주요 세션명·일정 흐름
+- 우선순위: ① 실제 방문 장소/주소(있을 때만) ② 모집·접수 방법(온라인 접수 등) ③ 문의처·연락처·전화번호·이메일 ④ 준비물·지참 서류 ⑤ 주요 세션명·일정 흐름
+- 실제 방문 장소가 없으면 ①을 건너뛰고 모집·접수 방법부터 요약
 - 문의처, 연락처, 전화번호, 이메일이 원문에 있으면 details_brief에도 가능한 한 포함
 - 한 줄 또는 글머리표 2~3개 이내로 작성
 - 구글 캘린더 메모란에 표시될 요약본
@@ -595,7 +602,10 @@ if st.button("일정등록", use_container_width=True):
                     events = process_text(user_input)
                 st.session_state.events = split_multiday_events(
                     dedupe_event_titles(
-                        align_events_to_listed_dates(events, user_input)
+                        align_events_to_listed_dates(
+                            sanitize_event_locations(events, user_input),
+                            user_input,
+                        )
                     )
                 )
                 st.session_state.registered = True
