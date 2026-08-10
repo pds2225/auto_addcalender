@@ -33,6 +33,16 @@ def get_build_version():
 BUILD_VERSION = get_build_version()
 st.caption(f"빌드 버전: {BUILD_VERSION}")
 
+# ── 사이드바: 마감 일정용 캘린더 설정 ──
+with st.sidebar:
+    st.header("⚙️ 설정")
+    deadline_cal_id = st.text_input(
+        "업무마감 캘린더 ID",
+        value=st.session_state.get("deadline_cal_id", "3c64499a708a0f83c727ade244b6c0465d6ba13f5b23abb4909a7747a4dd900a@group.calendar.google.com"),
+        help="제목에 '마감'이 포함된 일정을 이 캘린더에 등록합니다. 비어 있으면 내 캘린더에 등록됩니다.",
+    )
+    st.session_state.deadline_cal_id = deadline_cal_id
+
 # 배포 버전이 바뀌면 URL 쿼리 버전을 맞춰 자동 새로고침(수동 clear cache/rerun 최소화)
 try:
     query_version = st.query_params.get("v")
@@ -158,17 +168,18 @@ def process_text(text):
     return events
 
 
-def build_calendar_url(event):
+def build_calendar_url(event, cal_id=None):
     # Use brief summary for URL to avoid Google Calendar 400 error from long URLs.
     # Korean chars encode to ~9x length, so details_brief (≤100 chars) stays safe.
     # /r/eventedit + calid=primary: forces "내 캘린더" on mobile (avoids "메모" calendar default).
     details = event.get('details_brief') or event.get('details', '')
     if len(details) > 200:
         details = details[:200] + '...'
+    src = cal_id if cal_id else "primary"
     return (
         "https://calendar.google.com/calendar/render"
         "?action=TEMPLATE"
-        "&src=primary"
+        f"&src={urllib.parse.quote(src, safe='')}"
         f"&text={urllib.parse.quote(event.get('title', '새 일정'), safe='')}"
         f"&dates={event['start_date']}/{event['end_date']}"
         "&ctz=Asia%2FSeoul"
@@ -259,6 +270,7 @@ def make_ics_filename(title, index=None):
 
 
 def render_event_cards(events, selected_platforms):
+    deadline_cal_id = st.session_state.get("deadline_cal_id", "").strip()
     for i, event in enumerate(events):
         with st.container(border=True):
             left, right = st.columns([5, 1])
@@ -272,9 +284,12 @@ def render_event_cards(events, selected_platforms):
                         st.text(event["details"])
             with right:
                 if "구글 캘린더" in selected_platforms:
+                    is_deadline = "마감" in event.get("title", "")
+                    cal_id = deadline_cal_id if (is_deadline and deadline_cal_id) else None
+                    btn_label = "구글 등록 (마감)" if (is_deadline and deadline_cal_id) else "구글 등록"
                     st.link_button(
-                        "구글 등록",
-                        build_calendar_url(event),
+                        btn_label,
+                        build_calendar_url(event, cal_id),
                         use_container_width=True,
                     )
                 if "카카오 캘린더(.ics)" in selected_platforms:
