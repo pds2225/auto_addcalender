@@ -131,6 +131,7 @@ for key, default in {
     "image_source": None,
     "image_bytes": None,
     "image_mime": None,
+    "uploader_reset_key": 0,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -175,10 +176,6 @@ def get_image_input():
     if image_bytes:
         return image_bytes, image_mime or "image/jpeg"
 
-    uploaded_file = st.session_state.get("uploaded_image")
-    if uploaded_file is not None:
-        return uploaded_file.getvalue(), uploaded_file.type or "image/jpeg"
-
     pasted_data_url = st.session_state.get("pasted_image_data_url")
     if pasted_data_url:
         return parse_data_url_image(pasted_data_url)
@@ -195,7 +192,9 @@ def clear_image_input():
 
 def clear_image_input_callback():
     clear_image_input()
-    st.session_state.uploaded_image = None
+    # file_uploader 위젯 키에 None을 직접 대입하면 StreamlitValueAssignmentNotAllowedError 발생
+    st.session_state.pop("uploaded_image", None)
+    st.session_state.uploader_reset_key = st.session_state.get("uploader_reset_key", 0) + 1
     if CLIPBOARD_PASTE_KEY in st.session_state:
         del st.session_state[CLIPBOARD_PASTE_KEY]
 
@@ -224,15 +223,15 @@ def apply_pasted_image(data_url):
 
 def get_preview_image():
     image_source = st.session_state.get("image_source")
-    uploaded_file = st.session_state.get("uploaded_image")
+    image_bytes = st.session_state.get("image_bytes")
+    image_mime = st.session_state.get("image_mime")
     pasted_data_url = st.session_state.get("pasted_image_data_url")
 
-    if image_source == "upload" and uploaded_file is not None:
-        return uploaded_file, "선택한 이미지"
+    if image_source == "upload" and image_bytes:
+        data_url = f"data:{image_mime or 'image/jpeg'};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+        return data_url, "선택한 이미지"
     if image_source == "paste" and pasted_data_url:
         return pasted_data_url, "붙여넣은 이미지"
-    if uploaded_file is not None:
-        return uploaded_file, "선택한 이미지"
     if pasted_data_url:
         return pasted_data_url, "붙여넣은 이미지"
     return None, None
@@ -566,7 +565,7 @@ st.caption(
 uploaded_image = st.file_uploader(
     "이미지 파일 선택 (선택)",
     type=["png", "jpg", "jpeg", "webp", "gif"],
-    key="uploaded_image",
+    key=f"uploaded_image_{st.session_state.uploader_reset_key}",
     help="포스터, 초대장, 스크린샷 등에서 일정을 추출합니다.",
 )
 
