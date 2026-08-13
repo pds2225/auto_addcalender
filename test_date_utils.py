@@ -325,11 +325,125 @@ class SanitizeLocationTests(unittest.TestCase):
         self.assertEqual(cleaned[0]["location"], "서울시청 시민홀")
 
 
+class ApplyAnnouncementUrlTests(unittest.TestCase):
+    def test_online_announcement_uses_url_as_location(self):
+        source = "https://notice.example/apply\n모집방법: 온라인 접수\n신청 마감: 2026-08-19"
+        events = [
+            {
+                "title": "지원사업 모집마감",
+                "start_date": "20260819T180000",
+                "end_date": "20260819T180000",
+                "location": "",
+                "details": "모집방법: 온라인 접수",
+                "details_brief": "온라인 접수",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, source)
+
+        self.assertEqual(updated[0]["location"], "https://notice.example/apply")
+        self.assertEqual(updated[0]["details"], "모집방법: 온라인 접수")
+
+    def test_offline_event_keeps_venue_and_puts_url_in_details(self):
+        source = "설명회 https://notice.example/offline\n장소: 서울시청 시민홀"
+        events = [
+            {
+                "title": "창업 설명회",
+                "start_date": "20260820T140000",
+                "end_date": "20260820T160000",
+                "location": "서울시청 시민홀",
+                "details": "참석자 안내",
+                "details_brief": "시민홀 설명회",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, source)
+
+        self.assertEqual(updated[0]["location"], "서울시청 시민홀")
+        self.assertIn("https://notice.example/offline", updated[0]["details"])
+        self.assertIn("https://notice.example/offline", updated[0]["details_brief"])
+        self.assertIn("참석자 안내", updated[0]["details"])
+
+    def test_offline_location_mixed_with_url_is_split(self):
+        source = "https://notice.example/class"
+        events = [
+            {
+                "title": "오프라인 교육",
+                "start_date": "20260820T100000",
+                "end_date": "20260820T120000",
+                "location": "강남 코엑스 3층 https://notice.example/class",
+                "details": "준비물 안내",
+                "details_brief": "코엑스 교육",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, source)
+
+        self.assertEqual(updated[0]["location"], "강남 코엑스 3층")
+        self.assertIn("공고: https://notice.example/class", updated[0]["details"])
+
+    def test_does_not_duplicate_url_already_in_details(self):
+        source = "https://notice.example/keep"
+        events = [
+            {
+                "title": "오프라인 교육",
+                "start_date": "20260820T100000",
+                "end_date": "20260820T120000",
+                "location": "서울시 강남구 영동대로 513 코엑스",
+                "details": "공고: https://notice.example/keep\n준비물 안내",
+                "details_brief": "공고: https://notice.example/keep",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, source)
+
+        self.assertEqual(updated[0]["details"].count("https://notice.example/keep"), 1)
+        self.assertEqual(updated[0]["details_brief"].count("https://notice.example/keep"), 1)
+
+    def test_leaves_events_unchanged_without_url(self):
+        events = [
+            {
+                "title": "내부 회의",
+                "start_date": "20260820T100000",
+                "end_date": "20260820T110000",
+                "location": "본관 3층",
+                "details": "팀 회의",
+                "details_brief": "팀 회의",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, "내일 본관 3층에서 회의")
+
+        self.assertEqual(updated[0]["location"], "본관 3층")
+        self.assertEqual(updated[0]["details"], "팀 회의")
+
+    def test_prefers_fetched_page_url_over_body_links(self):
+        source = (
+            "웹페이지 원본 URL: https://notice.example/official\n"
+            "본문 링크 https://other.example/unrelated"
+        )
+        events = [
+            {
+                "title": "온라인 모집",
+                "start_date": "20260819T180000",
+                "end_date": "20260819T180000",
+                "location": "",
+                "details": "온라인 접수",
+                "details_brief": "온라인 접수",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, source)
+
+        self.assertEqual(updated[0]["location"], "https://notice.example/official")
+
+
 def public_endpoint():
     return (
         socket.AF_INET,
         socket.SOCK_STREAM,
         socket.IPPROTO_TCP,
+        "",
         ("93.184.216.34", 80),
     )
 
