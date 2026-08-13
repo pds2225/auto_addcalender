@@ -38,6 +38,12 @@ ONLINE_ONLY_LOCATION_PATTERN = re.compile(
     r"^(?:온라인|비대면|온라인\s*접수|온라인\s*신청|온라인\s*지원)$",
     re.IGNORECASE,
 )
+PHYSICAL_VENUE_PATTERN = re.compile(
+    r"[가-힣0-9A-Za-z]+(?:홀|센터|호텔|병원|학교|대학교|캠퍼스|빌딩|타워|"
+    r"구청|시청|박물관|미술관|공원|스테이션|회관|극장|복지관|플라자)|"
+    r"[가-힣]+(?:로|길|동|가)\s*\d+",
+    re.IGNORECASE,
+)
 
 
 class _VisibleTextParser(HTMLParser):
@@ -682,6 +688,75 @@ def sanitize_event_locations(events, source_text: str = ""):
                 should_clear = True
         if should_clear:
             cleaned["location"] = ""
+        result.append(cleaned)
+    return result
+
+
+def _strip_urls(text: str) -> str:
+    cleaned = URL_PATTERN.sub(" ", text or "")
+    return re.sub(r"\s+", " ", cleaned).strip(" ,;/-")
+
+
+def _first_url(text: str) -> str:
+    match = URL_PATTERN.search(text or "")
+    if not match:
+        return ""
+    return match.group(0).rstrip(".,);]}")
+
+
+def extract_announcement_url(text: str) -> str:
+    """사용자 입력 또는 가져온 공고 페이지의 원본 URL을 반환한다."""
+    if not text:
+        return ""
+    for line in text.splitlines()[:8]:
+        stripped = line.strip()
+        if stripped.startswith("웹페이지 원본 URL:"):
+            candidate = stripped.split(":", 1)[1].strip().rstrip(".,);]}")
+            if candidate and URL_PATTERN.match(candidate):
+                return candidate
+    return _first_url(text)
+
+
+def _is_physical_venue(location: str) -> bool:
+    loc = _strip_urls(location)
+    if not loc or ONLINE_ONLY_LOCATION_PATTERN.match(loc):
+        return False
+    return bool(VENUE_MARKER_PATTERN.search(loc) or PHYSICAL_VENUE_PATTERN.search(loc))
+
+
+def _append_announcement_url(text: str, url: str) -> str:
+    text = text or ""
+    if not url or url in text:
+        return text
+    if text.strip():
+        return f"{text.rstrip()}\n공고: {url}"
+    return f"공고: {url}"
+
+
+def apply_announcement_url(events, source_text: str = ""):
+    """공고 URL이 있으면 온라인 일정은 위치, 오프라인 일정은 메모에 넣는다.
+
+    - 실제 방문 장소가 있으면 location은 장소, 공고 링크는 details
+    - 방문 장소가 없으면 location에 공고 링크를 넣는다
+    원본 리스트는 수정하지 않는다.
+    """
+    source_url = extract_announcement_url(source_text)
+    result = []
+    for event in events or []:
+        cleaned = dict(event)
+        location = str(cleaned.get("location", "") or "").strip()
+        details = str(cleaned.get("details", "") or "")
+        details_brief = str(cleaned.get("details_brief", "") or "")
+        url = source_url or _first_url(location) or _first_url(details)
+        if not url:
+            result.append(cleaned)
+            continue
+        if _is_physical_venue(location):
+            cleaned["location"] = _strip_urls(location) or location
+            cleaned["details"] = _append_announcement_url(details, url)
+            cleaned["details_brief"] = _append_announcement_url(details_brief, url)
+        else:
+            cleaned["location"] = url
         result.append(cleaned)
     return result
 
