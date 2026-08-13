@@ -13,6 +13,20 @@ BASE: main
 7. 로컬 변경이 있으면 최신 `origin/main` 기준 별도 branch/worktree 생성. 안전 분리 불가 시 `BLOCKED`.
 8. 이 `TASK.md`만 실행. 다른 레포 TASK/NEXT_TASK/옛 채팅 과업 금지.
 9. 과업 후 테스트·commit·push. 명시 없으면 `main` 병합 금지.
+
+## 0.1 머지 규칙
+- 머지는 **이 TASK가 허용한 경우만** 한다. 명시가 없으면 기본 브랜치 병합 금지.
+- 조건: **충돌 없음** + **GitHub Checks 초록**.
+- 실패면 merge 명령 실행 금지.
+- 예외: **문서만(TASK.md 등) 변경**이고, CI 빨강이 **이번 diff와 무관한 기존 기본브랜치 실패**(예: mail `source_stats`)이면 문서 PR은 머지 가능. 근거를 최종 보고에 적을 것.
+
+
+## TRACK 골격
+TRACK A: (없음) → NO_ACTIVE_TASK 후 STOP
+TRACK B: (없음)
+TRACK C: (없음)
+통합검증: (없음)
+
 ## 목표
 현재 등록된 과업 없음. 새 과업이 명시되기 전에는 구현하지 않는다.
 ## 현재상태
@@ -55,3 +69,38 @@ STATUS: DONE | BLOCKED | FAIL | NO_ACTIVE_TASK
 ```
 ## 실행지시
 원격 상태를 안전하게 확인·동기화한 뒤 이 `TASK.md`를 처음부터 끝까지 읽고 여기에 적힌 과업만 수행한다.
+
+---
+
+# 필수 섹션 템플릿 (하단 고정)
+
+실과업이 있을 때 아래 칸이 비어 있으면 구현 금지(STOP).
+CURRENT TASK 없으면 이 섹션 채우지 말고 NO_ACTIVE_TASK로 STOP.
+
+## 목표
+
+## 현재 상태
+
+## 구현범위
+
+## 수정 금지
+
+## 입력검증
+
+## 빈 상태
+
+## 로딩 상태
+
+## 오류 상태
+
+## 테스트
+
+## 회귀검증
+
+## 문서 업데이트
+
+## commit/push 규칙
+
+## DONE/BLOCKED 기준
+
+## 최종 보고 형식
