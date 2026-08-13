@@ -1,106 +1,612 @@
-# TASK.md — 이 레포 실행 단일 기준
-```text
-REPO: pds2225/auto_addcalender
-BASE: main
-```
-## 0. Git 동기화·STOP 게이트
-1. `git fetch --all --prune`
-2. origin/branch/dirty 확인.
-3. `git rev-list --left-right --count HEAD...origin/main`으로 ahead/behind/diverged 확인.
-4. `main` clean + ahead=0 + behind>0일 때만 `git merge --ff-only origin/main`으로 최신화.
-5. dirty/ahead/diverged/다른 브랜치 로컬 변경은 보존. 자동 reset/삭제/덮어쓰기 금지.
-6. `git reset --hard`, force push, `git clean -fd`, 임의 stash/drop 금지.
-7. 로컬 변경이 있으면 최신 `origin/main` 기준 별도 branch/worktree 생성. 안전 분리 불가 시 `BLOCKED`.
-8. 이 `TASK.md`만 실행. 다른 레포 TASK/NEXT_TASK/옛 채팅 과업 금지.
-9. 과업 후 테스트·commit·push. 명시 없으면 `main` 병합 금지.
+# auto_addcalender
 
-## 0.1 머지 규칙
-- 머지는 **이 TASK가 허용한 경우만** 한다. 명시가 없으면 기본 브랜치 병합 금지.
-- 조건: **충돌 없음** + **GitHub Checks 초록**.
-- 실패면 merge 명령 실행 금지.
-- 예외: **문서만(TASK.md 등) 변경**이고, CI 빨강이 **이번 diff와 무관한 기존 기본브랜치 실패**(예: mail `source_stats`)이면 문서 PR은 머지 가능. 근거를 최종 보고에 적을 것.
-
-
-## TRACK 골격
-TRACK A: (없음) → NO_ACTIVE_TASK 후 STOP
-TRACK B: (없음)
-TRACK C: (없음)
-통합검증: (없음)
-
-## 목표
-현재 등록된 과업 없음. 새 과업이 명시되기 전에는 구현하지 않는다.
-## 현재상태
-- 기본 브랜치: `main`
-- CURRENT TASK: 없음
-## 구현범위
-- 없음
-## 금지사항
-- 임의 개발·리팩터링·다른 레포 작업, 테스트 삭제/skip 금지.
-## 입력검증
-- 저장소/origin 확인 후 최신 원격 기준 확보.
-## 빈상태
-- 과업 없음 → `NO_ACTIVE_TASK` 후 즉시 종료.
-## 로딩상태
-- 향후 UI/비동기 과업은 loading 상태 필수.
-## 오류상태
-- 오류를 숨기지 말고 증거와 함께 `BLOCKED`/`FAIL` 보고.
-## 테스트
-- 과업 시 targeted test + 필요한 전체 테스트.
-## 회귀검증
-- 기존 정상 기능 회귀 확인.
-## 문서동기화
-- README/TASKS/관련 문서가 구현과 불일치할 때 필요한 범위만 갱신.
-## Git 규칙
-- 독립 작업은 별도 branch/worktree 병렬 가능. 최신 `origin/main` 기준으로 작업→테스트→commit→push. 별도 지시 없으면 병합 금지.
-## DONE/BLOCKED
-- DONE: 구현·필수 테스트·회귀검증·문서동기화 통과.
-- BLOCKED: 요구 불명확/의존성 없음/sync·충돌·환경·테스트 실패/사용자 결정 필요.
-## 최종보고
-```text
-REPO:
-BASE_SYNC: CLEAN_CURRENT | FAST_FORWARDED | LOCAL_CHANGES_PRESERVED | DIVERGED | BLOCKED
-BRANCH:
-COMMIT:
-PUSH:
-CHANGED:
-TEST:
-REGRESSION:
-STATUS: DONE | BLOCKED | FAIL | NO_ACTIVE_TASK
-```
-## 실행지시
-원격 상태를 안전하게 확인·동기화한 뒤 이 `TASK.md`를 처음부터 끝까지 읽고 여기에 적힌 과업만 수행한다.
+> 이 파일은 이 GitHub 레포의 유일한 AI 작업지시 기준이다.
+> Google Tasks와는 완전히 별개이며 Google Tasks의 항목을 조회·복사·동기화하지 않는다.
 
 ---
 
-# 필수 섹션 템플릿 (하단 고정)
+# 0. TASK LIST
 
-실과업이 있을 때 아래 칸이 비어 있으면 구현 금지(STOP).
-CURRENT TASK 없으면 이 섹션 채우지 말고 NO_ACTIVE_TASK로 STOP.
+<!--
+비개발자가 이 부분만 보고도 현재 작업을 이해·수정·삭제할 수 있어야 한다.
+상태: 대기 / 진행 중 / 완료 / 막힘 / 취소 는 아래 기호만 사용한다.
+TASK 1개 = 반드시 1줄. LIST의 TASK_ID와 DETAILS의 TASK_ID는 반드시 1:1.
+사용자가 "삭제"하면 LIST + DETAILS 모두 삭제. "취소"하면 취소 상태로 보존 가능.
+REQUEST_SOLVED=YES가 아닌 작업은 완료 표시 금지.
+-->
 
-## 목표
+현재 수행할 사용자 요청 없음.
 
-## 현재 상태
+NO_ACTIVE_TASK
 
-## 구현범위
 
-## 수정 금지
+---
 
-## 입력검증
+# 1. REPOSITORY
 
-## 빈 상태
+REPO: pds2225/auto_addcalender
+BASE: main
+REMOTE: https://github.com/pds2225/auto_addcalender
 
-## 로딩 상태
+## 작업지시 파일
 
-## 오류 상태
+실행 기준은 이 파일 하나뿐이다.
 
-## 테스트
+- `TASK.md`만 작업지시 파일로 사용한다.
+- 별도의 CURRENT_TASK.md / NEW_TASK.md를 만들지 않는다.
+- NEXT_TASK.md, 다른 레포 TASK, Google Tasks, 과거 채팅 내용을 임의 실행하지 않는다.
+- 사용자의 새 요청은 이 TASK.md에 새로운 TASK 항목으로 등록한다.
 
-## 회귀검증
+---
 
-## 문서 업데이트
+# 2. GOOGLE TASKS 완전 분리
 
-## commit/push 규칙
+Google Tasks는 이 개발 TASK 시스템과 무관하다.
 
-## DONE/BLOCKED 기준
+금지:
 
-## 최종 보고 형식
+- Google Tasks 조회
+- Google Tasks 항목 가져오기
+- Google Tasks → TASK.md 자동등록
+- TASK.md → Google Tasks 등록
+- 상태/제목/완료 여부 동기화
+- Google Tasks 내용을 개발 우선순위 판단에 사용
+
+---
+
+# 3. GIT 안전 동기화 — 작업 시작 전
+
+작업 시작 전에 반드시 현재 Git 상태부터 확인한다.
+
+순서:
+
+1. `git fetch --all --prune`
+2. `git remote get-url origin`
+3. 현재 repo가 REPO와 일치하는지 확인
+4. `git branch --show-current`
+5. `git status --short`
+6. local/base와 origin/base의 ahead / behind 확인
+7. diverged 여부 확인
+
+예:
+
+`git rev-list --left-right --count HEAD...origin/main`
+
+## 자동 최신화 허용
+
+다음 조건을 모두 만족할 때만:
+
+- 현재 branch = BASE
+- working tree clean
+- ahead = 0
+- behind > 0
+
+아래와 같이 fast-forward만 허용:
+
+`git merge --ff-only origin/main`
+
+## 로컬 변경이 있는 경우
+
+dirty / ahead / diverged 상태의 로컬 변경은 반드시 보존한다.
+
+최신 `origin/main` 기준의 별도 branch/worktree에서 새 작업을 시작한다.
+
+안전하게 분리할 수 없으면:
+
+`BLOCKED`
+
+## 절대 금지
+
+- `git reset --hard`
+- force push
+- `git clean -fd`
+- 사용자 변경 삭제
+- 임의 stash/drop
+- 충돌을 무조건 ours/theirs로 해결
+- 로컬 파일을 원격 상태에 강제로 덮어쓰기
+
+---
+
+# 4. TASK 실행 계약 고정 — TASK PINNING
+
+AI가 TASK를 시작할 때 반드시 아래 값을 기록한다.
+
+TASK_ID: <현재 [~] TASK ID>
+TASK_START_SHA: <작업 시작 시 origin/base commit SHA>
+TASK_BLOB_SHA: <그 시점 TASK.md blob SHA>
+WORK_BRANCH: <task/TASK-ID 등>
+
+## 목적
+
+작업 도중 `TASK.md`가 새 요청으로 변경되더라도,
+이미 시작한 일반 TASK는 최초 실행 계약을 기준으로 완료한다.
+
+필요하면 최초 TASK는:
+
+`git show <TASK_START_SHA>:TASK.md`
+
+로 다시 확인한다.
+
+## 작업 중 TASK.md 변경 감지
+
+새 TASK가 일반적인 후속 요청:
+
+- 현재 ACTIVE TASK에 섞지 않는다.
+- 현재 TASK를 최초 TASK_ID 기준으로 계속 수행한다.
+- 새 TASK는 다음 실행에서 수행한다.
+
+새 TASK가 아래에 해당:
+
+- STOP
+- CANCEL
+- 기존 작업 즉시 중단 요청
+- 보안 긴급지시
+- 데이터 손실 방지 지시
+
+→ 현재 TASK를 즉시 중단하고 상태를 기록한다.
+
+---
+
+# 5. TASK 선택 규칙
+
+기본적으로 `[~]` 상태의 TASK 1개를 ACTIVE TASK로 실행한다.
+
+`[~]`가 없으면 실행 가능한 `[ ]` TASK 중 우선순위가 가장 높은 작업을 선택한다.
+
+## TASK 상태
+
+- `[ ]` READY / 대기
+- `[~]` ACTIVE / 진행 중
+- `[x]` DONE / 실제 요청 해결 완료
+- `[!]` BLOCKED / 현재 진행 불가능
+- `[-]` CANCELLED / 사용자 취소
+
+## 동시에 ACTIVE
+
+같은 파일·API·DB·entrypoint를 수정하지 않는 독립 작업만 여러 `[~]` 허용.
+
+---
+
+# 6. TASK 우선순위
+
+상충 시 아래 순서로 판단한다.
+
+1. 데이터 손실 방지 / 보안 / Git 안전규칙
+2. 가장 최신 사용자의 명시적 요청
+3. 현재 ACTIVE TASK
+4. ACTIVE TASK 수행에 필수인 선행조건
+5. repo의 필수 보호규칙 / architecture contract
+6. 기존 대기 TASK
+7. backlog
+8. 리팩터링 / 고도화 / 미관 개선
+
+판단할 수 없는 충돌은 임의 선택하지 않는다.
+
+→ `BLOCKED`
+
+---
+
+# 7. TASK 간 충돌·의존성
+
+## 병렬 가능
+
+다음을 모두 만족하면 병렬 가능:
+
+- 수정 파일군이 다름
+- 같은 public API를 변경하지 않음
+- 같은 DB schema/migration을 변경하지 않음
+- 같은 runtime entrypoint를 변경하지 않음
+- TASK A 결과가 TASK B의 입력이 아님
+
+## 순차 필수
+
+하나라도 해당하면 순차:
+
+- 같은 파일 수정
+- 같은 API contract 변경
+- 같은 DB migration 변경
+- 같은 entrypoint 변경
+- 한 TASK가 다른 TASK의 선행조건
+
+순차 예:
+
+TASK-A
+→ 실사용 검증
+→ 최신 코드 기준 TASK-B
+→ 통합 E2E
+
+---
+
+# 8. TASK DETAILS
+
+<!--
+TASK LIST 한 줄 요약과 아래 상세 TASK는 TASK_ID로 연결한다.
+
+새 사용자 요청을 TASK로 만들 때 반드시:
+MUST / KEEP / REMOVE / FORBIDDEN / VERIFY / DONE
+관점으로 변환한다.
+
+현재 활성 TASK 없음. 가짜 할 일을 만들지 않는다.
+-->
+
+NO_ACTIVE_TASK
+
+---
+
+# 9. 실제사용 시나리오
+
+TASK 완료 전에 반드시 실제 사용자 관점으로 검증한다.
+
+해당 TASK DETAILS의 최종 결과·구현범위와 함께 적용한다.
+
+## USER FLOW
+
+사용자 시작점:
+화면 / CLI / 이메일 / API / 파일 등 실제 진입점
+
+사용자 행동:
+1. 사용자가 실제로 하는 행동
+2. 다음 행동
+3. 다음 행동
+
+시스템 처리:
+실제 production 경로 (mock-only로 대체하지 않음)
+
+사용자 최종 결과:
+사용자가 실제 보게 되는 것
+
+## 핵심 질문
+
+`이 결과가 사용자의 최초 요청을 실제로 해결했는가?`
+
+YES가 아니면 DONE 금지.
+
+---
+
+# 10. VERIFY — 해결 여부 검증
+
+사용자 요청과 결과를 1:1로 대조한다.
+
+| 사용자 요구 | 실제 결과 | 판정 |
+|---|---|---|
+| DETAILS의 MUST 항목 | 실제 결과 | PASS/FAIL |
+
+하나라도 필수 요구가 FAIL이면:
+
+`REQUEST_SOLVED = NO`
+
+---
+
+# 11. 실사용 E2E
+
+최소 1개의 실제 사용자 흐름을 처음부터 끝까지 실행한다.
+
+원칙:
+
+- 단위 테스트만으로 대체 금지
+- mock-only 검증만으로 DONE 금지
+- 가능한 실제 runtime/production entrypoint 사용
+- 실제 외부 유료 호출이나 위험 작업은 안전한 staging/dry-run/preview 사용
+
+E2E 결과:
+
+USER_E2E: PASS | FAIL | BLOCKED
+
+근거:
+명령 / 화면 / 산출물 / preview / API 결과
+
+---
+
+# 12. 테스트
+
+실사용 검증을 보조하는 테스트를 수행한다.
+
+최소:
+
+- 정상경로
+- 주요 경계값
+- 입력검증
+- 빈상태
+- 주요 오류
+- 변경한 기능 단위 테스트
+- 관련 integration test
+
+테스트 PASS만으로 DONE 처리하지 않는다.
+
+---
+
+# 13. 회귀검증
+
+이번 변경 때문에 기존 핵심 기능이 깨지지 않았는지 확인한다.
+
+- [ ] 기존 핵심 사용자 흐름
+- [ ] 관련 API
+- [ ] 인증/권한
+- [ ] DB 계약
+- [ ] 기존 사용자 데이터
+- [ ] 기존 자동화
+- [ ] 기존 주요 테스트
+
+관련 없는 전체 제품 고도화는 하지 않는다.
+
+---
+
+# 14. 문서동기화
+
+실제 구현과 문서가 달라진 경우에만 최소 수정:
+
+- README
+- TASK 관련 문서
+- ARCHITECTURE
+- 운영문서
+- 테스트/사용법 문서
+
+거짓 DONE 기록을 남기지 않는다.
+
+---
+
+# 15. DONE 기준 — 실제 사용자 요청 해결 기준
+
+## 절대 원칙
+
+다음은 단독으로 DONE 근거가 아니다.
+
+- 코드 작성 완료
+- 테스트 PASS
+- build PASS
+- 오류 없음
+- commit 존재
+- PR 생성
+- 화면이 열림
+
+## DONE
+
+다음을 모두 만족해야 한다.
+
+- [ ] 사용자의 필수 요청사항 전부 해결
+- [ ] `REQUEST_SOLVED = YES`
+- [ ] 실제 사용자 E2E PASS
+- [ ] 사용자가 원하는 최종 결과 확인
+- [ ] 필요한 입력/빈/로딩/오류상태 사용 가능
+- [ ] 기존 핵심 기능 회귀 없음
+- [ ] 금지사항 위반 없음
+- [ ] 필요한 문서 동기화
+- [ ] commit 완료
+- [ ] push 완료
+
+## ALREADY_DONE
+
+새 코드를 만들지 않아도 이미 요청사항이 해결되어 있고
+실제사용 E2E로 이를 확인한 경우.
+
+## PARTIAL
+
+일부 구현했지만:
+
+`REQUEST_SOLVED = NO`
+
+인 경우.
+
+작업량이 많아도 DONE 금지.
+
+## BLOCKED
+
+외부 의존성/권한/정책/Git 충돌/검증환경 때문에
+안전하게 사용자의 요청을 해결할 수 없는 경우.
+
+## FAIL
+
+구현을 시도했으나 사용자 요청 해결에 실패한 경우.
+
+---
+
+# 16. 작업 종료 전 Git 최신 상태 재확인
+
+작업 완료 직전 다시:
+
+1. `git fetch --all --prune`
+2. 현재 `origin/main` 확인
+3. `TASK_START_SHA`와 최신 base 비교
+
+## base가 작업 중 변경된 경우
+
+코드를 최신 base와 안전하게 통합한다.
+
+필요하면:
+
+- conflict 해결
+- 관련 test 재실행
+- USER E2E 재실행
+- regression 재실행
+
+단:
+
+최신 TASK.md의 새로운 일반 작업을 현재 ACTIVE TASK에 섞지 않는다.
+
+코드는 최신화할 수 있지만,
+ACTIVE TASK의 목적과 DONE 조건은 최초 TASK snapshot을 유지한다.
+
+---
+
+# 17. 작업 완료 후 Git 동기화
+
+TASK 구현 완료:
+
+1. 변경 파일 확인
+2. 필요한 파일만 stage (`git add -A` 금지)
+3. commit
+4. remote work branch에 push
+
+확인:
+
+WORK_BRANCH_PUSHED: YES | NO
+
+## PR/merge가 TASK 범위인 경우
+
+- 필요한 검사 통과
+- PR
+- merge
+
+머지는 이 TASK가 허용한 경우만 한다. 명시가 없으면 기본 브랜치 병합 금지.
+
+조건:
+
+- 충돌 없음
+- GitHub Checks 초록
+
+실패면 merge 명령 실행 금지.
+
+예외: 문서만(`TASK.md` 등) 변경이고, CI 빨강이 이번 diff와 무관한 기존 기본브랜치 실패이면 문서 PR은 머지 가능. 근거를 최종 보고에 적는다.
+
+merge 후:
+
+1. `git fetch`
+2. local base clean 확인
+3. `git merge --ff-only origin/main`
+4. local base와 remote base 일치 확인
+
+절대 reset --hard로 맞추지 않는다.
+
+---
+
+# 18. TASK LIST 상태 갱신 규칙
+
+TASK LIST의 상태는 실제 결과와 반드시 일치한다.
+
+### `[x]`
+
+다음일 때만:
+
+`REQUEST_SOLVED = YES`
+
+### `[~]`
+
+현재 실행 중.
+
+### `[!]`
+
+BLOCKED.
+
+### `[-]`
+
+사용자가 취소.
+
+### `[ ]`
+
+아직 시작하지 않음.
+
+LIST와 DETAILS가 불일치하면 TASK 파일 오류로 간주한다.
+
+---
+
+# 19. TASK 수정/삭제 규칙
+
+## 사용자가 TASK 설명을 수정
+
+TASK LIST 1줄 요약과 해당 DETAILS를 함께 수정한다.
+
+## 사용자가 "삭제"
+
+- TASK LIST 행 삭제
+- TASK DETAILS 전체 삭제
+
+## 사용자가 "취소"
+
+- LIST를 `[-]`로 변경
+- 상세에는 취소 이유 최소 기록 가능
+
+## 완료 TASK
+
+사용자가 목록에서 완료 TASK도 계속 보고 싶다면 `[x]` 유지.
+
+별도 요청으로 정리할 때만 제거한다.
+
+---
+
+# 20. 새 사용자 요청 등록 규칙
+
+새 요청:
+
+1. 기존 TASK와 동일한 요청인지 확인
+2. 이미 해결됐으면 중복 생성 금지
+3. 새 TASK_ID 발급
+4. 사용자 원문 보존
+5. 비개발자용 1줄 요약 생성
+6. TASK LIST에 `[ ]` 추가
+7. TASK DETAILS 생성
+8. MUST/KEEP/REMOVE/FORBIDDEN/VERIFY/DONE 변환
+9. 기존 TASK와 dependency/충돌 검사
+10. 실행 순서 결정
+
+기존 ACTIVE TASK에 새 요청을 임의 합치지 않는다.
+
+---
+
+# 21. TASK 완료 후 다음 TASK
+
+현재 TASK가 DONE된 후:
+
+- TASK LIST에서 다음 READY 작업 확인
+- dependency가 해결된 작업 우선
+- 독립 작업은 병렬 가능
+- BLOCKED 작업은 건너뛰되 이유 유지
+
+새 TASK가 없으면:
+
+`NO_ACTIVE_TASK`
+
+를 보고하고 개발을 중단한다.
+
+---
+
+# 22. 최종보고
+
+반드시 아래 형식으로 보고한다.
+
+REPO:
+TASK_ID:
+
+USER_REQUEST:
+REQUEST_SOLVED: YES | NO
+
+TASK_START_SHA:
+TASK_BLOB_SHA:
+WORK_BRANCH:
+
+USER_E2E: PASS | FAIL | BLOCKED
+USER_RESULT:
+VERIFY_RESULT:
+
+TEST:
+REGRESSION:
+
+COMMIT:
+WORK_BRANCH_PUSHED: YES | NO
+
+PR:
+MAIN_MERGED: YES | NO | N/A
+
+REMOTE_BASE_SYNC:
+LOCAL_BASE_SYNC:
+
+TASK_STATUS:
+DONE | ALREADY_DONE | PARTIAL | BLOCKED | FAIL
+
+NEXT_READY_TASK:
+PENDING_TASKS:
+
+---
+
+# 23. 최종 STOP 조건
+
+아래 중 하나면 임의 개발을 계속하지 않는다.
+
+- ACTIVE TASK 없음
+- 사용자 요청과 TASK 내용이 명백하게 불일치
+- repo/origin 불일치
+- 안전한 Git 작업공간 확보 불가
+- 사용자 데이터를 잃을 위험
+- 최신 CANCEL/STOP 지시 발견
+- 해결방법 선택이 제품정책을 바꾸며 사용자의 결정이 반드시 필요함
+
+상태를 `BLOCKED` 또는 `NO_ACTIVE_TASK`로 보고한다.
