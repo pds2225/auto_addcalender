@@ -13,6 +13,16 @@ MAX_WEBPAGE_BYTES = 2 * 1024 * 1024
 MAX_EXTRACTED_TEXT = 40000
 MAX_REDIRECTS = 5
 URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
+# Zoom/Meet 등 입장 링크는 웹페이지가 아니라 일정 장소로 취급한다.
+_MEETING_HOSTS = (
+    "zoom.us",
+    "meet.google.com",
+    "teams.microsoft.com",
+    "teams.live.com",
+    "webex.com",
+    "gotomeeting.com",
+    "whereby.com",
+)
 DEADLINE_PATTERN = re.compile(
     r"접수\s*마감|신청\s*마감|모집\s*마감|지원\s*마감|제출\s*마감|"
     r"접수\s*종료|신청\s*종료|모집\s*종료|마감일|신청\s*기한|제출\s*기한",
@@ -364,23 +374,60 @@ def fetch_webpage_text(url: str) -> str:
     return f"웹페이지 원본 URL: {final_url}\n{extracted}"
 
 
-def expand_url_input(text: str) -> str:
-    """입력에 URL이 있으면 첫 번째 공개 웹페이지를 읽고 나머지 입력 문구와 합친다."""
-    match = URL_PATTERN.search(text or "")
-    if not match:
-        return text
+def _url_hostname(url: str) -> str:
+    host = (urllib.parse.urlparse(url).hostname or "").lower().rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    return host
 
-    url = match.group(0).rstrip(".,);]}")
-    supplemental = (text[: match.start()] + text[match.end() :]).strip()
-    try:
-        page_text = fetch_webpage_text(url)
-    except ValueError:
+
+def _is_meeting_url(url: str) -> bool:
+    """Zoom/Meet 등 입장 링크인지 여부. 공고 페이지 주소와 구분한다."""
+    host = _url_hostname(url)
+    if not host:
+        return False
+    for meeting_host in _MEETING_HOSTS:
+        if host == meeting_host or host.endswith("." + meeting_host):
+            return True
+    return False
+
+
+def _extract_urls(text: str):
+    urls = []
+    seen = set()
+    for match in URL_PATTERN.finditer(text or ""):
+        url = match.group(0).rstrip(".,);]}")
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+def extract_meeting_urls(text: str):
+    """입력 텍스트에서 Zoom/Meet 등 입장 링크만 순서대로 반환한다."""
+    return [url for url in _extract_urls(text) if _is_meeting_url(url)]
+
+
+def expand_url_input(text: str) -> str:
+    """입력에 URL이 있으면 첫 번째 공개 웹페이지를 읽고 나머지 입력 문구와 합친다.
+
+    Zoom/Meet 입장 링크는 페이지를 가져오지 않는다. 일정의 장소로 남겨 둔다.
+    """
+    for match in URL_PATTERN.finditer(text or ""):
+        url = match.group(0).rstrip(".,);]}")
+        if _is_meeting_url(url):
+            continue
+        supplemental = (text[: match.start()] + text[match.end() :]).strip()
+        try:
+            page_text = fetch_webpage_text(url)
+        except ValueError:
+            if supplemental:
+                return text
+            raise
         if supplemental:
-            return text
-        raise
-    if supplemental:
-        return f"{page_text}\n\n사용자 추가 입력:\n{supplemental}"
-    return page_text
+            return f"{page_text}\n\n사용자 추가 입력:\n{supplemental}"
+        return page_text
+    return text
 
 
 def _is_deadline_focused(text: str) -> bool:
@@ -443,6 +490,14 @@ _DISCRETE_DATES_RULE = (
     "시작~종료 기간 하나로 묶지 말고, '중 N일'처럼 후보·선택 표현이 있어도 "
     "나열된 모든 날짜를 각각 일정으로 등록하십시오. "
     "제목·장소·상세는 동일하게 유지하고 날짜만 다르게 설정하십시오.\n\n"
+)
+_MULTI_MEETING_RULE = (
+    "[중요 일정 해석 규칙]\n"
+    "아래에 온라인 교육/회의 입장 링크가 여러 개 있습니다. "
+    "각 링크는 서로 다른 일정입니다. "
+    "링크 개수만큼 이벤트를 각각 생성하고, "
+    "각 이벤트의 location에는 해당 일정의 입장 링크만 넣으십시오. "
+    "첫 번째 일정만 만들고 나머지를 합치거나 생략하지 마십시오.\n\n"
 )
 
 
@@ -608,18 +663,22 @@ def normalize_date_ranges(text: str) -> str:
 
     normalized, discrete_expanded = expand_comma_separated_dates(normalized)
 
+    extra_rules = []
     if discrete_expanded:
-        normalized = _DISCRETE_DATES_RULE + normalized
+        extra_rules.append(_DISCRETE_DATES_RULE.strip())
     elif _is_deadline_focused(normalized):
-        normalized = (
+        extra_rules.append(
             "[중요 일정 해석 규칙]\n"
             "이 문서는 접수·신청·모집 등의 마감 공고입니다. "
             "접수기간 전체를 일정으로 생성하지 말고, 마감일 하루에 일정 1개만 생성하십시오. "
             "start_date와 end_date의 날짜는 모두 마감일로 설정하십시오. "
             "마감 시간이 있으면 start_date는 마감일 09:00, end_date는 명시된 마감 시간으로 설정하고, "
-            "마감 시간이 없으면 마감일 09:00~18:00으로 설정하십시오.\n\n"
-            + normalized
+            "마감 시간이 없으면 마감일 09:00~18:00으로 설정하십시오."
         )
+    if len(set(extract_meeting_urls(normalized))) >= 2:
+        extra_rules.append(_MULTI_MEETING_RULE.strip())
+    if extra_rules:
+        normalized = "\n\n".join(extra_rules) + "\n\n" + normalized
 
     return normalized
 
@@ -705,16 +764,26 @@ def _first_url(text: str) -> str:
 
 
 def extract_announcement_url(text: str) -> str:
-    """사용자 입력 또는 가져온 공고 페이지의 원본 URL을 반환한다."""
+    """사용자 입력 또는 가져온 공고 페이지의 원본 URL을 반환한다.
+
+    Zoom/Meet 입장 링크는 공고 주소가 아니므로 건너뛴다.
+    """
     if not text:
         return ""
     for line in text.splitlines()[:8]:
         stripped = line.strip()
         if stripped.startswith("웹페이지 원본 URL:"):
             candidate = stripped.split(":", 1)[1].strip().rstrip(".,);]}")
-            if candidate and URL_PATTERN.match(candidate):
+            if (
+                candidate
+                and URL_PATTERN.match(candidate)
+                and not _is_meeting_url(candidate)
+            ):
                 return candidate
-    return _first_url(text)
+    for url in _extract_urls(text):
+        if not _is_meeting_url(url):
+            return url
+    return ""
 
 
 def _is_physical_venue(location: str) -> bool:
@@ -733,30 +802,66 @@ def _append_announcement_url(text: str, url: str) -> str:
     return f"공고: {url}"
 
 
+def _event_link(event) -> str:
+    return _first_url(event.get("location", "") or "") or _first_url(
+        event.get("details", "") or ""
+    )
+
+
 def apply_announcement_url(events, source_text: str = ""):
     """공고 URL이 있으면 온라인 일정은 위치, 오프라인 일정은 메모에 넣는다.
 
     - 실제 방문 장소가 있으면 location은 장소, 공고 링크는 details
     - 방문 장소가 없으면 location에 공고 링크를 넣는다
+    - 일정마다 Zoom/Meet 링크가 다르면 첫 번째 링크로 덮어쓰지 않는다
     원본 리스트는 수정하지 않는다.
     """
     source_url = extract_announcement_url(source_text)
+    meeting_urls = extract_meeting_urls(source_text)
+    result_events = [dict(event) for event in (events or [])]
+    event_links = [_event_link(event) for event in result_events]
+    distinct_event_links = {url for url in event_links if url}
+    assign_meetings_by_index = (
+        len(meeting_urls) == len(result_events)
+        and len(set(meeting_urls)) == len(result_events)
+        and len(distinct_event_links) != len(result_events)
+    )
+
     result = []
-    for event in events or []:
+    for index, event in enumerate(result_events):
         cleaned = dict(event)
         location = str(cleaned.get("location", "") or "").strip()
         details = str(cleaned.get("details", "") or "")
         details_brief = str(cleaned.get("details_brief", "") or "")
-        url = source_url or _first_url(location) or _first_url(details)
-        if not url:
+        event_url = event_links[index]
+        if assign_meetings_by_index:
+            chosen_url = meeting_urls[index]
+        elif event_url:
+            chosen_url = event_url
+        else:
+            chosen_url = source_url or (meeting_urls[0] if len(meeting_urls) == 1 else "")
+        if not chosen_url:
             result.append(cleaned)
             continue
         if _is_physical_venue(location):
             cleaned["location"] = _strip_urls(location) or location
-            cleaned["details"] = _append_announcement_url(details, url)
-            cleaned["details_brief"] = _append_announcement_url(details_brief, url)
+            page_url = source_url if source_url and not _is_meeting_url(source_url) else ""
+            if page_url:
+                cleaned["details"] = _append_announcement_url(details, page_url)
+                cleaned["details_brief"] = _append_announcement_url(
+                    details_brief, page_url
+                )
         else:
-            cleaned["location"] = url
+            cleaned["location"] = chosen_url
+            if (
+                source_url
+                and source_url != chosen_url
+                and not _is_meeting_url(source_url)
+            ):
+                cleaned["details"] = _append_announcement_url(details, source_url)
+                cleaned["details_brief"] = _append_announcement_url(
+                    details_brief, source_url
+                )
         result.append(cleaned)
     return result
 

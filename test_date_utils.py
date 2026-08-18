@@ -91,6 +91,143 @@ class UrlFallbackTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "로그인 필요"):
             date_utils.expand_url_input("https://example.com/login-only")
 
+    @patch("date_utils.fetch_webpage_text")
+    def test_does_not_fetch_zoom_join_links(self, fetch_page):
+        original = (
+            "■ 3차 교육\n"
+            "일시: 2026. 8. 19.(수) 10:00 ~ 12:00\n"
+            "온라인 교육 링크: https://zoom.us/j/94615087524\n"
+            "■ 4차 교육\n"
+            "일시: 2026. 8. 20.(목) 10:00 ~ 12:00\n"
+            "온라인 교육 링크: https://zoom.us/j/93853146020"
+        )
+
+        self.assertEqual(date_utils.expand_url_input(original), original)
+        fetch_page.assert_not_called()
+
+    @patch("date_utils.fetch_webpage_text")
+    def test_skips_zoom_and_fetches_notice_page(self, fetch_page):
+        fetch_page.return_value = (
+            "웹페이지 원본 URL: https://notice.example/class\n"
+            "페이지 본문 충분히 긴 안내입니다."
+        )
+        original = (
+            "https://zoom.us/j/94615087524 "
+            "공고 https://notice.example/class"
+        )
+
+        expanded = date_utils.expand_url_input(original)
+
+        fetch_page.assert_called_once_with("https://notice.example/class")
+        self.assertIn("notice.example/class", expanded)
+
+
+class MeetingUrlTests(unittest.TestCase):
+    SAMPLE = (
+        "■ 3차 교육\n"
+        "일시: 2026. 8. 19.(수) 10:00 ~ 12:00\n"
+        "강연 주제: 정부지원사업 선정 가능성을 높이는 사업계획서 작성 및 지원 전략\n"
+        "온라인 교육 링크: https://zoom.us/j/94615087524\n"
+        "회의 ID: 946 1508 7524\n"
+        "\n"
+        "■ 4차 교육\n"
+        "일시: 2026. 8. 20.(목) 10:00 ~ 12:00\n"
+        "강연 주제: 항공우주산업의 성공적인 펀딩 전략\n"
+        "온라인 교육 링크: https://zoom.us/j/93853146020\n"
+        "회의 ID: 938 5314 6020\n"
+        "\n"
+        "■ 5차 교육\n"
+        "일시: 2026. 8. 21.(금) 10:00 ~ 12:00\n"
+        "강연 주제: AI 활용 사업계획서 작성\n"
+        "온라인 교육 링크: https://zoom.us/j/98107652210\n"
+        "회의 ID: 981 0765 2210\n"
+    )
+
+    def test_extracts_each_zoom_link_in_order(self):
+        self.assertEqual(
+            date_utils.extract_meeting_urls(self.SAMPLE),
+            [
+                "https://zoom.us/j/94615087524",
+                "https://zoom.us/j/93853146020",
+                "https://zoom.us/j/98107652210",
+            ],
+        )
+
+    def test_announcement_url_skips_zoom_links(self):
+        self.assertEqual(date_utils.extract_announcement_url(self.SAMPLE), "")
+
+    def test_normalize_injects_multi_meeting_rule(self):
+        normalized = date_utils.normalize_date_ranges(self.SAMPLE)
+
+        self.assertIn("링크 개수만큼 이벤트를 각각 생성", normalized)
+        self.assertIn("https://zoom.us/j/98107652210", normalized)
+        self.assertNotIn("웹페이지 원본 URL:", normalized)
+
+    def _event(self, title, start, location=""):
+        return {
+            "title": title,
+            "start_date": start,
+            "end_date": start[:8] + "T120000",
+            "location": location,
+            "details": title,
+            "details_brief": title,
+        }
+
+    def test_keeps_distinct_zoom_locations(self):
+        events = [
+            self._event("3차 교육", "20260819T100000", "https://zoom.us/j/94615087524"),
+            self._event("4차 교육", "20260820T100000", "https://zoom.us/j/93853146020"),
+            self._event("5차 교육", "20260821T100000", "https://zoom.us/j/98107652210"),
+        ]
+
+        updated = date_utils.apply_announcement_url(events, self.SAMPLE)
+
+        self.assertEqual(
+            [event["location"] for event in updated],
+            [
+                "https://zoom.us/j/94615087524",
+                "https://zoom.us/j/93853146020",
+                "https://zoom.us/j/98107652210",
+            ],
+        )
+
+    def test_assigns_distinct_zoom_links_when_ai_reused_first_link(self):
+        first = "https://zoom.us/j/94615087524"
+        events = [
+            self._event("3차 교육", "20260819T100000", first),
+            self._event("4차 교육", "20260820T100000", first),
+            self._event("5차 교육", "20260821T100000", first),
+        ]
+
+        updated = date_utils.apply_announcement_url(events, self.SAMPLE)
+
+        self.assertEqual(
+            [event["location"] for event in updated],
+            [
+                "https://zoom.us/j/94615087524",
+                "https://zoom.us/j/93853146020",
+                "https://zoom.us/j/98107652210",
+            ],
+        )
+
+    def test_assigns_zoom_links_when_locations_are_empty(self):
+        events = [
+            self._event("3차 교육", "20260819T100000"),
+            self._event("4차 교육", "20260820T100000"),
+            self._event("5차 교육", "20260821T100000"),
+        ]
+
+        updated = date_utils.apply_announcement_url(events, self.SAMPLE)
+
+        self.assertEqual(
+            [event["location"] for event in updated],
+            [
+                "https://zoom.us/j/94615087524",
+                "https://zoom.us/j/93853146020",
+                "https://zoom.us/j/98107652210",
+            ],
+        )
+
 
 class DeadlineClassificationTests(unittest.TestCase):
     def test_registration_deadline_does_not_hide_normal_event_dates(self):
