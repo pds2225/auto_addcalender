@@ -1,0 +1,12 @@
+{
+  "name": "auto_addcalender",
+  "install": "pip install --user -r requirements.txt pytest ruff",
+  "start": "mkdir -p .streamlit && if [ -n \"$OPENAI_API_KEY\" ]; then umask 077; printf 'OPENAI_API_KEY = \"%s\"\\n' \"$OPENAI_API_KEY\" > .streamlit/secrets.toml; echo 'Wrote .streamlit/secrets.toml from OPENAI_API_KEY env var'; else echo 'OPENAI_API_KEY not set; .streamlit/secrets.toml not created'; fi",
+  "terminals": [
+    {
+      "name": "streamlit",
+      "command": "python3 -m streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true"
+    }
+  ],
+  "ports": [8501]
+}
