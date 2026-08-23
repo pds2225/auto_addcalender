@@ -425,26 +425,14 @@ def make_ics_filename(title, index=None):
 
 
 def render_bulk_register_section(events, selected_platforms):
-    """선택한 일정의 구글 등록 화면을 연다. 팝업이 1개만 열려도 나머지를 이어서 연다."""
+    """복수 일정에서 원하는 항목만 체크해 구글 캘린더 탭을 한 번에 연다."""
     if len(events) < 2 or "구글 캘린더" not in selected_platforms:
         return
 
-    st.subheader("⚡ 일괄 등록")
+    st.subheader("⚡ 선택 일괄 열기")
+    st.caption("원하는 일정만 체크한 뒤 버튼을 누르면 선택한 구글 캘린더 탭이 한 번에 열립니다.")
 
-    bulk_options = {
-        i: f"{event.get('title', '새 일정')} · {fmt(event['start_date'])}"
-        for i, event in enumerate(events)
-    }
-    selected_indices = st.multiselect(
-        "일괄 열기할 일정",
-        options=list(bulk_options.keys()),
-        default=list(bulk_options.keys()),
-        format_func=lambda idx: bulk_options[idx],
-        key="bulk_register_indices",
-        help="이미 개별 등록한 일정은 체크를 해제하세요.",
-    )
-    selected_events = [events[i] for i in selected_indices]
-    count = len(selected_events)
+    count = len(events)
     items_json = json.dumps(
         [
             {
@@ -452,13 +440,12 @@ def render_bulk_register_section(events, selected_platforms):
                 "title": event.get("title", "새 일정"),
                 "when": fmt(event["start_date"]),
             }
-            for event in selected_events
+            for event in events
         ],
         ensure_ascii=False,
-    )
-    disabled_attr = "disabled" if count == 0 else ""
-    list_height = min(count, 6) * 34
-    iframe_height = 108 + list_height
+    ).replace("<", "\\u003c")
+    list_height = min(count, 6) * 52
+    iframe_height = 168 + list_height
 
     bulk_open_html = f"""
 <!DOCTYPE html>
@@ -471,7 +458,22 @@ def render_bulk_register_section(events, selected_platforms):
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     padding: 2px 0;
   }}
-  button {{
+  .toolbar {{
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+  }}
+  .toolbar button {{
+    width: auto;
+    background: none;
+    color: #1a73e8;
+    border: none;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }}
+  #bulk-btn {{
     width: 100%;
     background: #1a73e8;
     color: #fff;
@@ -482,24 +484,48 @@ def render_bulk_register_section(events, selected_platforms):
     font-weight: 700;
     cursor: pointer;
   }}
-  button:disabled {{
+  #bulk-btn:disabled {{
     background: #9aa0a6;
     cursor: not-allowed;
   }}
   #bulk-list {{
-    margin-top: 8px;
+    margin-top: 10px;
+    max-height: {list_height}px;
+    overflow-y: auto;
   }}
-  #bulk-list a {{
-    display: block;
-    padding: 7px 2px;
-    font-size: 13px;
-    line-height: 1.4;
-    color: #1a73e8;
-    text-decoration: none;
+  .item {{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 2px;
     border-bottom: 1px solid #eee;
   }}
-  #bulk-list a.done {{
+  .item input[type=checkbox] {{
+    width: 18px;
+    height: 18px;
+    margin-top: 3px;
+    flex-shrink: 0;
+    accent-color: #1a73e8;
+    cursor: pointer;
+  }}
+  .item label {{
+    flex: 1;
+    font-size: 14px;
+    line-height: 1.45;
+    cursor: pointer;
+  }}
+  .item label .sub {{
+    display: block;
+    font-size: 12px;
     color: #5f6368;
+  }}
+  .item a {{
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: 12px;
+    color: #1a73e8;
+    text-decoration: none;
+    white-space: nowrap;
   }}
   #bulk-msg {{
     margin-top: 8px;
@@ -510,84 +536,105 @@ def render_bulk_register_section(events, selected_platforms):
 </style>
 </head>
 <body>
-<button id="bulk-btn" {disabled_attr} onclick="openNextBatch()">구글 일괄 열기 ({count}개)</button>
+<div class="toolbar">
+  <button type="button" onclick="setAll(true)">전체 선택</button>
+  <button type="button" onclick="setAll(false)">전체 해제</button>
+</div>
+<button id="bulk-btn" type="button" onclick="openSelectedAll()">선택 일괄 열기 ({count}개)</button>
 <div id="bulk-list"></div>
-<p id="bulk-msg">모바일에서는 창이 1개만 열릴 수 있습니다. 저장한 뒤 같은 버튼을 다시 누르면 다음 일정이 열립니다.</p>
+<p id="bulk-msg">체크한 일정의 구글 캘린더 탭을 한 번에 엽니다. 각 탭에서 저장을 눌러 주세요.</p>
 <script>
 var items = {items_json};
-var nextIndex = 0;
 
-function openedOk(win) {{
-  if (!win) return false;
-  try {{
-    if (win.closed) return false;
-  }} catch (e) {{}}
-  return true;
+function checkedItems() {{
+  var selected = [];
+  items.forEach(function(item, i) {{
+    var cb = document.getElementById('chk' + i);
+    if (cb && cb.checked) selected.push({{ item: item, index: i }});
+  }});
+  return selected;
+}}
+
+function setAll(checked) {{
+  items.forEach(function(_, i) {{
+    var cb = document.getElementById('chk' + i);
+    if (cb) cb.checked = checked;
+  }});
+  updateButton();
 }}
 
 function renderList() {{
   var list = document.getElementById('bulk-list');
   list.innerHTML = '';
   items.forEach(function(item, i) {{
-    var a = document.createElement('a');
-    a.href = item.url;
-    a.target = 'gcal_event_' + i;
-    a.rel = 'noopener noreferrer';
-    a.className = i < nextIndex ? 'done' : '';
-    a.textContent = (i < nextIndex ? '열림 · ' : (i + 1) + '. ') + item.title + ' · ' + item.when;
-    a.addEventListener('click', function() {{
-      if (i >= nextIndex) nextIndex = i + 1;
-      updateButton();
-      renderList();
-    }});
-    list.appendChild(a);
+    var row = document.createElement('div');
+    row.className = 'item';
+
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'chk' + i;
+    cb.checked = true;
+    cb.addEventListener('change', updateButton);
+
+    var label = document.createElement('label');
+    label.htmlFor = 'chk' + i;
+    label.appendChild(document.createTextNode(item.title));
+    var sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = item.when;
+    label.appendChild(sub);
+
+    var link = document.createElement('a');
+    link.href = item.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = '개별 열기';
+
+    row.appendChild(cb);
+    row.appendChild(label);
+    row.appendChild(link);
+    list.appendChild(row);
   }});
 }}
 
 function updateButton() {{
   var btn = document.getElementById('bulk-btn');
   var msg = document.getElementById('bulk-msg');
-  if (!items.length) {{
-    btn.disabled = true;
-    btn.textContent = '구글 일괄 열기 (0개)';
-    msg.textContent = '열 일정을 선택해 주세요.';
-    return;
-  }}
-  if (nextIndex >= items.length) {{
-    btn.disabled = true;
-    btn.textContent = '모두 열었습니다 (' + items.length + '개)';
-    msg.textContent = '각 구글 캘린더 탭에서 저장을 눌러 주세요.';
-    return;
-  }}
-  btn.disabled = false;
-  if (nextIndex === 0) {{
-    btn.textContent = '구글 일괄 열기 (' + items.length + '개)';
-    msg.textContent = '모바일에서는 창이 1개만 열릴 수 있습니다. 저장한 뒤 같은 버튼을 다시 누르면 다음 일정이 열립니다.';
+  var n = checkedItems().length;
+  btn.disabled = n === 0;
+  btn.textContent = '선택 일괄 열기 (' + n + '개)';
+  if (n === 0) {{
+    msg.textContent = '열 일정을 하나 이상 선택해 주세요.';
   }} else {{
-    btn.textContent = '다음 일정 열기 (' + (nextIndex + 1) + '/' + items.length + ')';
-    msg.textContent = nextIndex + '개 열었습니다. 저장한 뒤 다음 일정을 열어 주세요.';
+    msg.textContent = '체크한 일정의 구글 캘린더 탭을 한 번에 엽니다. 각 탭에서 저장을 눌러 주세요.';
   }}
 }}
 
-function openNextBatch() {{
+function openSelectedAll() {{
+  var selected = checkedItems();
   var msg = document.getElementById('bulk-msg');
-  if (!items.length || nextIndex >= items.length) {{
-    msg.textContent = '열 일정을 선택해 주세요.';
+  if (!selected.length) {{
+    msg.textContent = '열 일정을 하나 이상 선택해 주세요.';
     return;
   }}
-  var opened = 0;
-  while (nextIndex < items.length) {{
-    var item = items[nextIndex];
-    var win = window.open(item.url, 'gcal_event_' + nextIndex);
-    if (!openedOk(win)) break;
-    opened += 1;
-    nextIndex += 1;
-  }}
-  if (opened === 0) {{
-    msg.textContent = '팝업이 차단되었습니다. 아래 일정을 직접 눌러 열어 주세요.';
-  }}
-  updateButton();
-  renderList();
+  var stamp = Date.now();
+  var requested = 0;
+  selected.forEach(function(entry) {{
+    var name = 'gcal_sel_' + stamp + '_' + entry.index;
+    var win = window.open(entry.item.url, name);
+    if (!win) {{
+      var a = document.createElement('a');
+      a.href = entry.item.url;
+      a.target = name;
+      a.rel = 'noopener noreferrer';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }}
+    requested += 1;
+  }});
+  msg.textContent = requested + '개 구글 캘린더 탭을 한 번에 열었습니다. 각 탭에서 저장을 눌러 주세요. 일부만 열리면 주소창에서 팝업을 허용한 뒤 같은 버튼을 다시 누르세요.';
 }}
 
 renderList();
@@ -719,7 +766,7 @@ if st.session_state.registered and st.session_state.events:
         default=["구글 캘린더"],
         help="카카오는 .ics 파일 다운로드 후 카카오 캘린더에서 가져오기로 등록할 수 있습니다.",
     )
-    st.caption("여러 일정이면 위에서 구글 일괄 열기를 사용하세요. 창이 1개만 열리면 같은 버튼을 다시 눌러 다음 일정을 여세요.")
+    st.caption("여러 일정이면 원하는 일정만 체크한 뒤 선택 일괄 열기를 누르세요. 선택한 구글 캘린더 탭이 한 번에 열립니다.")
 
     # ── 일괄 등록 ─────────────────────────────────────
     render_bulk_register_section(events, selected_platforms)
