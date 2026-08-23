@@ -545,6 +545,15 @@ def render_bulk_register_section(events, selected_platforms):
 <p id="bulk-msg">체크한 일정의 구글 캘린더 탭을 한 번에 엽니다. 각 탭에서 저장을 눌러 주세요.</p>
 <script>
 var items = {items_json};
+var openedIndexes = {{}};
+
+function openedOk(win) {{
+  if (!win) return false;
+  try {{
+    if (win.closed) return false;
+  }} catch (e) {{}}
+  return true;
+}}
 
 function checkedItems() {{
   var selected = [];
@@ -573,12 +582,13 @@ function renderList() {{
     var cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.id = 'chk' + i;
-    cb.checked = true;
+    cb.checked = !openedIndexes[i];
     cb.addEventListener('change', updateButton);
 
     var label = document.createElement('label');
     label.htmlFor = 'chk' + i;
-    label.appendChild(document.createTextNode(item.title));
+    var titleText = openedIndexes[i] ? ('열림 · ' + item.title) : item.title;
+    label.appendChild(document.createTextNode(titleText));
     var sub = document.createElement('span');
     sub.className = 'sub';
     sub.textContent = item.when;
@@ -597,32 +607,44 @@ function renderList() {{
   }});
 }}
 
+function pendingItems() {{
+  return checkedItems().filter(function(entry) {{
+    return !openedIndexes[entry.index];
+  }});
+}}
+
 function updateButton() {{
   var btn = document.getElementById('bulk-btn');
   var msg = document.getElementById('bulk-msg');
-  var n = checkedItems().length;
+  var n = pendingItems().length;
+  var openedCount = Object.keys(openedIndexes).length;
   btn.disabled = n === 0;
-  btn.textContent = '선택 일괄 열기 (' + n + '개)';
-  if (n === 0) {{
+  if (n === 0 && openedCount > 0) {{
+    btn.textContent = '모두 열었습니다 (' + openedCount + '개)';
+    msg.textContent = '각 구글 캘린더 탭에서 저장을 눌러 주세요.';
+  }} else if (n === 0) {{
+    btn.textContent = '선택 일괄 열기 (0개)';
     msg.textContent = '열 일정을 하나 이상 선택해 주세요.';
+  }} else if (openedCount > 0) {{
+    btn.textContent = '남은 일정 일괄 열기 (' + n + '개)';
+    msg.textContent = openedCount + '개는 열었습니다. 팝업을 허용한 뒤 같은 버튼을 누르면 남은 ' + n + '개가 한 번에 열립니다.';
   }} else {{
+    btn.textContent = '선택 일괄 열기 (' + n + '개)';
     msg.textContent = '체크한 일정의 구글 캘린더 탭을 한 번에 엽니다. 각 탭에서 저장을 눌러 주세요.';
   }}
 }}
 
 function openSelectedAll() {{
-  var selected = checkedItems();
-  var msg = document.getElementById('bulk-msg');
+  var selected = pendingItems();
   if (!selected.length) {{
-    msg.textContent = '열 일정을 하나 이상 선택해 주세요.';
+    updateButton();
     return;
   }}
   var stamp = Date.now();
-  var requested = 0;
   selected.forEach(function(entry) {{
     var name = 'gcal_sel_' + stamp + '_' + entry.index;
     var win = window.open(entry.item.url, name);
-    if (!win) {{
+    if (!openedOk(win)) {{
       var a = document.createElement('a');
       a.href = entry.item.url;
       a.target = name;
@@ -631,10 +653,16 @@ function openSelectedAll() {{
       document.body.appendChild(a);
       a.click();
       a.remove();
+      win = window.open(entry.item.url, name);
     }}
-    requested += 1;
+    if (openedOk(win)) {{
+      openedIndexes[entry.index] = true;
+      var cb = document.getElementById('chk' + entry.index);
+      if (cb) cb.checked = false;
+    }}
   }});
-  msg.textContent = requested + '개 구글 캘린더 탭을 한 번에 열었습니다. 각 탭에서 저장을 눌러 주세요. 일부만 열리면 주소창에서 팝업을 허용한 뒤 같은 버튼을 다시 누르세요.';
+  renderList();
+  updateButton();
 }}
 
 renderList();
