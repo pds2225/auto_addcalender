@@ -111,7 +111,7 @@ const openLog = [];
 let openCalls = 0;
 let blockFrom = null;
 if (scenario === 'block-all') blockFrom = 1;
-if (scenario === 'block-after-2') blockFrom = 3;
+if (scenario === 'block-after-2' || scenario === 'uncheck-remaining') blockFrom = 3;
 
 global.window = {
   open(url, name) {
@@ -142,6 +142,12 @@ function run(name) {
     document.getElementById('chk0').checked = false;
     openSelectedAll();
     flushTimers();
+    return;
+  }
+  if (name === 'uncheck-remaining') {
+    openSelectedAll();
+    flushTimers();
+    setAll(false);
     return;
   }
   openSelectedAll();
@@ -263,6 +269,11 @@ class BulkOpenRuntimeTests(unittest.TestCase):
         self.assertEqual(data["openCount"], 2)
         self.assertEqual(data["urls"], ["https://calendar.example/1", "https://calendar.example/2"])
         self.assertEqual(data["openedKeys"], ["0", "1", "2"])
+
+    def test_unchecking_leftovers_does_not_claim_all_opened(self):
+        data = _run_js("uncheck-remaining", 5)
+        self.assertEqual(data["openedKeys"], ["0", "1"])
+        self.assertEqual(data["btnText"], "선택 일괄 열기 (0개)")
 
 
 if __name__ == "__main__":

@@ -85,6 +85,14 @@ function pendingItems() {
   });
 }
 
+function remainingCount() {
+  var n = 0;
+  items.forEach(function(_, i) {
+    if (!openedIndexes[i]) n += 1;
+  });
+  return n;
+}
+
 function updateButton() {
   var btn = document.getElementById('bulk-btn');
   var msg = document.getElementById('bulk-msg');
@@ -92,7 +100,7 @@ function updateButton() {
   var n = pendingItems().length;
   var openedCount = Object.keys(openedIndexes).length;
   btn.disabled = n === 0;
-  if (n === 0 && openedCount > 0) {
+  if (remainingCount() === 0) {
     btn.textContent = '모두 열었습니다 (' + openedCount + '개)';
     msg.textContent = '각 구글 캘린더 탭에서 저장을 눌러 주세요.';
   } else if (n === 0) {
