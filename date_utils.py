@@ -28,6 +28,33 @@ DEADLINE_PATTERN = re.compile(
     r"접수\s*종료|신청\s*종료|모집\s*종료|마감일|신청\s*기한|제출\s*기한",
     re.IGNORECASE,
 )
+DEADLINE_EVENT_TEXT_PATTERN = re.compile(r"마감")
+PRIMARY_CALENDAR_SRC = "primary"
+# 구글 캘린더 이름: 업무마감일
+DEADLINE_CALENDAR_SRC = (
+    "3c64499a708a0f83c727ade244b6c0465d6ba13f5b23abb4909a7747a4dd900a"
+    "@group.calendar.google.com"
+)
+
+
+def is_deadline_event(event) -> bool:
+    """제목·메모에 '마감'이 있으면 업무마감일 캘린더 대상으로 본다."""
+    if not isinstance(event, dict):
+        return False
+    haystack = " ".join(
+        str(event.get(key) or "")
+        for key in ("title", "details", "details_brief")
+    )
+    return bool(DEADLINE_EVENT_TEXT_PATTERN.search(haystack))
+
+
+def calendar_src_for_event(event, deadline_calendar_id=None, default_src=None) -> str:
+    """구글 캘린더 TEMPLATE URL의 src 값. 마감 일정은 업무마감일, 그 외는 내 캘린더."""
+    default = default_src or PRIMARY_CALENDAR_SRC
+    if not is_deadline_event(event):
+        return default
+    deadline_src = (deadline_calendar_id or DEADLINE_CALENDAR_SRC).strip()
+    return deadline_src or default
 ONLINE_METHOD_PATTERN = re.compile(
     r"(?:모집|접수|신청|지원)\s*방법\s*[:：]?\s*온라인|"
     r"온라인\s*(?:접수|신청|지원|등록)|"

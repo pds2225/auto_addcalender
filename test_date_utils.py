@@ -267,6 +267,30 @@ class DeadlineClassificationTests(unittest.TestCase):
 
         self.assertTrue(normalized.startswith("[중요 일정 해석 규칙]"))
 
+    def test_deadline_event_uses_work_deadline_calendar(self):
+        event = {
+            "title": "고려사이버대 DBA 박사 입학신청 마감",
+            "details": "신청 마감 안내",
+        }
+
+        self.assertTrue(date_utils.is_deadline_event(event))
+        self.assertEqual(
+            date_utils.calendar_src_for_event(event),
+            date_utils.DEADLINE_CALENDAR_SRC,
+        )
+
+    def test_non_deadline_event_uses_primary_calendar(self):
+        event = {
+            "title": "고려사이버대 DBA 박사 입학신청 시작일",
+            "details": "09:00부터 접수",
+        }
+
+        self.assertFalse(date_utils.is_deadline_event(event))
+        self.assertEqual(
+            date_utils.calendar_src_for_event(event),
+            date_utils.PRIMARY_CALENDAR_SRC,
+        )
+
 
 class CommaSeparatedDateTests(unittest.TestCase):
     def test_expand_korean_abbreviated_day_list(self):

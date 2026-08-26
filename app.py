@@ -15,6 +15,7 @@ from clipboard_paste import clipboard_paste_zone
 from date_utils import (
     align_events_to_listed_dates,
     apply_announcement_url,
+    calendar_src_for_event,
     dedupe_event_titles,
     normalize_date_ranges,
     sanitize_event_locations,
@@ -319,17 +320,28 @@ def process_image(image_bytes, mime_type, supplemental_text=""):
     return validate_extracted_events(data.get("events", []), "이미지")
 
 
+def _deadline_calendar_id():
+    try:
+        configured = str(st.secrets.get("DEADLINE_CALENDAR_ID") or "").strip()
+    except Exception:
+        configured = ""
+    if configured:
+        return configured
+    return (os.getenv("DEADLINE_CALENDAR_ID") or "").strip()
+
+
 def build_calendar_url(event):
     # Use brief summary for URL to avoid Google Calendar 400 error from long URLs.
     # Korean chars encode to ~9x length, so details_brief (≤100 chars) stays safe.
-    # /r/eventedit + calid=primary: forces "내 캘린더" on mobile (avoids "메모" calendar default).
+    # src=primary: 내 캘린더. 제목/메모에 '마감'이 있으면 업무마감일 캘린더.
     details = event.get('details_brief') or event.get('details', '')
     if len(details) > 200:
         details = details[:200] + '...'
+    src = calendar_src_for_event(event, deadline_calendar_id=_deadline_calendar_id())
     return (
         "https://calendar.google.com/calendar/render"
         "?action=TEMPLATE"
-        "&src=primary"
+        f"&src={urllib.parse.quote(src, safe='')}"
         f"&text={urllib.parse.quote(event.get('title', '새 일정'), safe='')}"
         f"&dates={event['start_date']}/{event['end_date']}"
         "&ctz=Asia%2FSeoul"
