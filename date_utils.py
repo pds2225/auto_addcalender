@@ -682,18 +682,18 @@ def align_events_to_listed_dates(events, source_text: str):
 _NUMERIC_PARTIAL_YEAR_RANGE = re.compile(
     r"(?P<start_year>\d{4})(?:\s*[-./]\s*|\s+)"
     r"(?P<start_month>\d{1,2})(?:\s*[-./]\s*|\s+)(?P<start_day>\d{1,2})"
-    r"\s*(?:\(\s*[월화수목금토일]\s*\))?\s*[~∼]\s*"
+    r"(?:\s*\(\s*[월화수목금토일]\s*\))?\s*[~∼]\s*"
     r"(?:(?P<end_year>\d{4})(?:\s*[-./]\s*|\s+))?"
     r"(?P<end_month>\d{1,2})(?:\s*[-./]\s*|\s+)(?P<end_day>\d{1,2})"
-    r"\s*(?:\(\s*[월화수목금토일]\s*\))?"
+    r"(?:\s*\(\s*[월화수목금토일]\s*\))?"
 )
 _KOREAN_PARTIAL_YEAR_RANGE = re.compile(
     r"(?P<start_year>\d{4})\s*년\s*"
     r"(?P<start_month>\d{1,2})\s*월\s*(?P<start_day>\d{1,2})\s*일?"
-    r"\s*(?:\(\s*[월화수목금토일]\s*\))?\s*(?:부터|[~∼])\s*"
+    r"(?:\s*\(\s*[월화수목금토일]\s*\))?\s*(?:부터|[~∼])\s*"
     r"(?:(?P<end_year>\d{4})\s*년\s*)?"
     r"(?P<end_month>\d{1,2})\s*월\s*(?P<end_day>\d{1,2})\s*일?"
-    r"\s*(?:\(\s*[월화수목금토일]\s*\))?"
+    r"(?:\s*\(\s*[월화수목금토일]\s*\))?"
 )
 
 
