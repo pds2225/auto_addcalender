@@ -28,6 +28,10 @@ DEADLINE_PATTERN = re.compile(
     r"접수\s*종료|신청\s*종료|모집\s*종료|마감일|신청\s*기한|제출\s*기한",
     re.IGNORECASE,
 )
+APPLICATION_PERIOD_PATTERN = re.compile(
+    r"(?:모집|신청|접수)\s*기간",
+    re.IGNORECASE,
+)
 DEADLINE_EVENT_TEXT_PATTERN = re.compile(r"마감")
 PRIMARY_CALENDAR_SRC = "primary"
 # 구글 캘린더 이름: 업무마감일
@@ -526,6 +530,14 @@ _MULTI_MEETING_RULE = (
     "각 이벤트의 location에는 해당 일정의 입장 링크만 넣으십시오. "
     "첫 번째 일정만 만들고 나머지를 합치거나 생략하지 마십시오.\n\n"
 )
+_APPLICATION_DEADLINE_RULE = (
+    "[필수 마감 일정 규칙]\n"
+    "모집기간·신청기간·접수기간이 있으면 그 기간의 종료 시점을 신청 마감으로 해석하십시오. "
+    "기간 전체를 하나의 이벤트로 만들지 말고 종료일에 '[마감] '으로 시작하는 이벤트를 반드시 1개 생성하십시오. "
+    "결과발표·본선·면접·시상식 등 다른 날짜가 함께 있어도 마감 이벤트를 생략하거나 다른 일정으로 대체하지 마십시오. "
+    "종료일에 연도가 생략되면 시작일의 연도를 상속하고, 시작 월보다 종료 월이 작으면 다음 연도로 해석하십시오. "
+    "'18시까지', '18:00까지', '오후 6시까지'처럼 시간이 있으면 그 시간을 마감시간으로 사용하십시오.\n\n"
+)
 
 
 def _parse_days_from_chunk(chunk: str):
@@ -667,8 +679,51 @@ def align_events_to_listed_dates(events, source_text: str):
     return aligned if aligned else result_events
 
 
+_NUMERIC_PARTIAL_YEAR_RANGE = re.compile(
+    r"(?P<start_year>\d{4})(?:\s*[-./]\s*|\s+)"
+    r"(?P<start_month>\d{1,2})(?:\s*[-./]\s*|\s+)(?P<start_day>\d{1,2})"
+    r"\s*(?:\(\s*[월화수목금토일]\s*\))?\s*[~∼]\s*"
+    r"(?:(?P<end_year>\d{4})(?:\s*[-./]\s*|\s+))?"
+    r"(?P<end_month>\d{1,2})(?:\s*[-./]\s*|\s+)(?P<end_day>\d{1,2})"
+    r"\s*(?:\(\s*[월화수목금토일]\s*\))?"
+)
+_KOREAN_PARTIAL_YEAR_RANGE = re.compile(
+    r"(?P<start_year>\d{4})\s*년\s*"
+    r"(?P<start_month>\d{1,2})\s*월\s*(?P<start_day>\d{1,2})\s*일?"
+    r"\s*(?:\(\s*[월화수목금토일]\s*\))?\s*(?:부터|[~∼])\s*"
+    r"(?:(?P<end_year>\d{4})\s*년\s*)?"
+    r"(?P<end_month>\d{1,2})\s*월\s*(?P<end_day>\d{1,2})\s*일?"
+    r"\s*(?:\(\s*[월화수목금토일]\s*\))?"
+)
+
+
+def _normalize_partial_year_date_ranges(text: str) -> str:
+    def repl(match):
+        start_year = int(match.group("start_year"))
+        start_month = int(match.group("start_month"))
+        start_day = int(match.group("start_day"))
+        end_month = int(match.group("end_month"))
+        end_day = int(match.group("end_day"))
+        explicit_end_year = match.group("end_year")
+        end_year = int(explicit_end_year) if explicit_end_year else start_year
+        if not explicit_end_year and end_month < start_month:
+            end_year += 1
+        try:
+            datetime(start_year, start_month, start_day)
+            datetime(end_year, end_month, end_day)
+        except ValueError:
+            return match.group(0)
+        return (
+            f"{start_year:04d}-{start_month:02d}-{start_day:02d}"
+            f"~{end_year:04d}-{end_month:02d}-{end_day:02d}"
+        )
+
+    normalized = _NUMERIC_PARTIAL_YEAR_RANGE.sub(repl, text or "")
+    return _KOREAN_PARTIAL_YEAR_RANGE.sub(repl, normalized)
+
+
 def normalize_date_ranges(text: str) -> str:
-    normalized = expand_url_input(text)
+    normalized = _normalize_partial_year_date_ranges(expand_url_input(text))
 
     # YYYY-MM-DD ~ DD  -> YYYY-MM-DD ~ YYYY-MM-DD
     def repl_short(match):
@@ -691,6 +746,8 @@ def normalize_date_ranges(text: str) -> str:
     normalized, discrete_expanded = expand_comma_separated_dates(normalized)
 
     extra_rules = []
+    if APPLICATION_PERIOD_PATTERN.search(normalized):
+        extra_rules.append(_APPLICATION_DEADLINE_RULE.strip())
     if discrete_expanded:
         extra_rules.append(_DISCRETE_DATES_RULE.strip())
     elif _is_deadline_focused(normalized):
@@ -829,6 +886,17 @@ def _append_announcement_url(text: str, url: str) -> str:
     return f"공고: {url}"
 
 
+def _append_detail_value(text: str, label: str, value: str) -> str:
+    text = text or ""
+    value = str(value or "").strip()
+    if not value or value in text:
+        return text
+    line = f"{label}: {value}"
+    if text.strip():
+        return f"{text.rstrip()}\n{line}"
+    return line
+
+
 def _event_link(event) -> str:
     return _first_url(event.get("location", "") or "") or _first_url(
         event.get("details", "") or ""
@@ -836,11 +904,11 @@ def _event_link(event) -> str:
 
 
 def apply_announcement_url(events, source_text: str = ""):
-    """공고 URL이 있으면 온라인 일정은 위치, 오프라인 일정은 메모에 넣는다.
+    """공고 원문 URL이 있으면 모든 일정의 location에 원문 URL을 넣는다.
 
-    - 실제 방문 장소가 있으면 location은 장소, 공고 링크는 details
-    - 방문 장소가 없으면 location에 공고 링크를 넣는다
-    - 일정마다 Zoom/Meet 링크가 다르면 첫 번째 링크로 덮어쓰지 않는다
+    - 공고 URL이 있으면 query string을 포함한 원문 URL을 location에 그대로 보존한다.
+    - 실제 방문 장소나 Zoom/Meet 링크가 있으면 details/details_brief에 보존한다.
+    - 공고 URL이 없을 때는 기존 실제 장소·회의 링크 동작을 유지한다.
     원본 리스트는 수정하지 않는다.
     """
     source_url = extract_announcement_url(source_text)
@@ -861,34 +929,47 @@ def apply_announcement_url(events, source_text: str = ""):
         details = str(cleaned.get("details", "") or "")
         details_brief = str(cleaned.get("details_brief", "") or "")
         event_url = event_links[index]
+
+        if source_url:
+            venue = _strip_urls(location)
+            if venue and _is_physical_venue(venue):
+                details = _append_detail_value(details, "실제 장소", venue)
+                details_brief = _append_detail_value(
+                    details_brief, "실제 장소", venue
+                )
+
+            meeting_url = ""
+            if assign_meetings_by_index:
+                meeting_url = meeting_urls[index]
+            elif event_url and _is_meeting_url(event_url):
+                meeting_url = event_url
+            elif len(meeting_urls) == 1:
+                meeting_url = meeting_urls[0]
+            if meeting_url:
+                details = _append_detail_value(details, "접속 링크", meeting_url)
+                details_brief = _append_detail_value(
+                    details_brief, "접속 링크", meeting_url
+                )
+
+            cleaned["location"] = source_url
+            cleaned["details"] = details
+            cleaned["details_brief"] = details_brief
+            result.append(cleaned)
+            continue
+
         if assign_meetings_by_index:
             chosen_url = meeting_urls[index]
         elif event_url:
             chosen_url = event_url
         else:
-            chosen_url = source_url or (meeting_urls[0] if len(meeting_urls) == 1 else "")
+            chosen_url = meeting_urls[0] if len(meeting_urls) == 1 else ""
         if not chosen_url:
             result.append(cleaned)
             continue
         if _is_physical_venue(location):
             cleaned["location"] = _strip_urls(location) or location
-            page_url = source_url if source_url and not _is_meeting_url(source_url) else ""
-            if page_url:
-                cleaned["details"] = _append_announcement_url(details, page_url)
-                cleaned["details_brief"] = _append_announcement_url(
-                    details_brief, page_url
-                )
         else:
             cleaned["location"] = chosen_url
-            if (
-                source_url
-                and source_url != chosen_url
-                and not _is_meeting_url(source_url)
-            ):
-                cleaned["details"] = _append_announcement_url(details, source_url)
-                cleaned["details_brief"] = _append_announcement_url(
-                    details_brief, source_url
-                )
         result.append(cleaned)
     return result
 
