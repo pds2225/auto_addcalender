@@ -79,7 +79,14 @@ function flushTimers() {
   }
 }
 
-global.navigator = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120' };
+Object.defineProperty(globalThis, 'navigator', {
+  value: {
+    userAgent: scenario.indexOf('android') === 0
+      ? 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120'
+  },
+  configurable: true,
+});
 
 global.document = {
   _byId: {},
@@ -150,6 +157,13 @@ function run(name) {
     setAll(false);
     return;
   }
+  if (name === 'android-three-taps') {
+    openSelectedAll();
+    openSelectedAll();
+    openSelectedAll();
+    flushTimers();
+    return;
+  }
   openSelectedAll();
   flushTimers();
 }
@@ -215,6 +229,7 @@ class BulkOpenPageTests(unittest.TestCase):
             ]
         )
         self.assertIn("setTimeout(tick, OPEN_GAP_MS)", html)
+        self.assertIn("if (isMobile)", html)
         self.assertIn("win.opener = null", html)
         self.assertIn("if (opening) return", html)
         self.assertNotIn("a.click()", html)
@@ -274,6 +289,28 @@ class BulkOpenRuntimeTests(unittest.TestCase):
         data = _run_js("uncheck-remaining", 5)
         self.assertEqual(data["openedKeys"], ["0", "1"])
         self.assertEqual(data["btnText"], "선택 일괄 열기 (0개)")
+
+    def test_android_opens_only_one_tab_per_tap(self):
+        data = _run_js("android-open-all", 5)
+        self.assertEqual(data["openCount"], 1)
+        self.assertEqual(data["openedKeys"], ["0"])
+        self.assertEqual(data["gaps"], [])
+        self.assertEqual(data["btnText"], "다음 일정 열기 (4개 남음)")
+        self.assertFalse(data["opening"])
+
+    def test_android_same_button_opens_the_next_event(self):
+        data = _run_js("android-three-taps", 5)
+        self.assertEqual(data["openCount"], 3)
+        self.assertEqual(data["openedKeys"], ["0", "1", "2"])
+        self.assertEqual(
+            data["urls"],
+            [
+                "https://calendar.example/0",
+                "https://calendar.example/1",
+                "https://calendar.example/2",
+            ],
+        )
+        self.assertEqual(data["btnText"], "다음 일정 열기 (2개 남음)")
 
 
 if __name__ == "__main__":
