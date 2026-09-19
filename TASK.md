@@ -15,9 +15,7 @@ TASK 1개 = 반드시 1줄. LIST의 TASK_ID와 DETAILS의 TASK_ID는 반드시 1
 REQUEST_SOLVED=YES가 아닌 작업은 완료 표시 금지.
 -->
 
-현재 수행할 사용자 요청 없음.
-
-NO_ACTIVE_TASK
+[~] T-20260918-01 | P0 | 이미지 공고의 모집·신청기간 마감 누락 수정 + 공고 원문 URL을 Google Calendar 장소(Location)에 저장
 
 
 ---
@@ -270,7 +268,41 @@ MUST / KEEP / REMOVE / FORBIDDEN / VERIFY / DONE
 현재 활성 TASK 없음. 가짜 할 일을 만들지 않는다.
 -->
 
-NO_ACTIVE_TASK
+## T-20260918-01
+
+TASK_ID: T-20260918-01
+TASK_START_SHA: 4570ea0fafdc1529ad45f88cb81ae024b5ef6f6a
+TASK_BLOB_SHA: 9b1b42711c30fc3bfe487a9f7130eaa94cbcbf82
+WORK_BRANCH: main_auto_addcalender_0918
+
+MUST:
+- 이미지 공고에 `모집기간/신청기간/접수기간`이 있으면 종료시점을 신청 마감 일정으로 반드시 포함한다.
+- `2026. 9. 14(월) ~ 10. 6(화) 18시까지`를 `2026-10-06 18:00` 마감으로 해석한다.
+- 마감 이벤트 제목에 `[마감]`을 붙여 업무마감일 캘린더 분류가 안정적으로 동작하게 한다.
+- 시작일에만 연도가 있는 범위는 종료일에 연도를 상속하고, 12월→1월이면 다음 연도로 rollover 한다.
+- 공고 원문 URL이 있으면 Google Calendar `location`에 원문 URL을 넣는다. 실제 행사 장소는 `details`에 보존한다.
+
+KEEP:
+- 기존 텍스트/URL/이미지 입력 흐름, Google Calendar 링크, .ics 생성, 다중 일정 추출, Zoom/Meet 다중 링크 처리.
+- source URL이 없을 때의 기존 실제 장소/회의 링크 처리.
+
+REMOVE:
+- source URL이 있어도 오프라인 장소를 `location`에 우선 두는 기존 정책.
+
+FORBIDDEN:
+- .env / secrets / .github/workflows 수정.
+- main 직접 수정·강제 push·관련 없는 리팩터링.
+
+VERIFY:
+- 현재 마포 포스터 형식의 모집기간 종료일 테스트.
+- 연도 생략/연말 rollover/OCR 공백 변형 테스트.
+- source URL이 실제 장소보다 location에 우선하는 테스트.
+- 기존 date_utils 회귀 테스트 및 GitHub Checks.
+
+DONE:
+- 위 MUST 전부 PASS.
+- REQUEST_SOLVED=YES.
+- USER_E2E=PASS 또는 외부 API 제약이 있으면 명시적으로 BLOCKED 상태 유지.
 
 ---
 

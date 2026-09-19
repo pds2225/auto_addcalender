@@ -229,6 +229,39 @@ class MeetingUrlTests(unittest.TestCase):
         )
 
 
+class PartialYearDeadlineRangeTests(unittest.TestCase):
+    def test_mangwon_style_application_period_inherits_end_year_and_time(self):
+        text = "모집기간 : 2026. 9. 14(월) ~ 10. 6(화) 18시까지"
+
+        normalized = date_utils.normalize_date_ranges(text)
+
+        self.assertIn("2026-09-14~2026-10-06 18시까지", normalized)
+        self.assertIn("[필수 마감 일정 규칙]", normalized)
+        self.assertIn("'[마감] '", normalized)
+
+    def test_partial_year_range_rolls_over_new_year(self):
+        text = "신청기간 2026.12.20 ~ 1.10 17시"
+
+        normalized = date_utils.normalize_date_ranges(text)
+
+        self.assertIn("2026-12-20~2027-01-10 17시", normalized)
+
+    def test_korean_from_to_range_inherits_year(self):
+        text = "접수기간 : 2026년 9월 14일부터 10월 6일 18시까지"
+
+        normalized = date_utils.normalize_date_ranges(text)
+
+        self.assertIn("2026-09-14~2026-10-06 18시까지", normalized)
+
+    def test_ocr_spacing_and_line_break_are_normalized(self):
+        text = "모집 기간 : 2026. 9. 14 (월)\n~ 10. 6 (화) 18 시까지"
+
+        normalized = date_utils.normalize_date_ranges(text)
+
+        self.assertIn("2026-09-14~2026-10-06 18 시까지", normalized)
+        self.assertIn("[필수 마감 일정 규칙]", normalized)
+
+
 class DeadlineClassificationTests(unittest.TestCase):
     def test_registration_deadline_does_not_hide_normal_event_dates(self):
         text = (
@@ -505,7 +538,7 @@ class ApplyAnnouncementUrlTests(unittest.TestCase):
         self.assertEqual(updated[0]["location"], "https://notice.example/apply")
         self.assertEqual(updated[0]["details"], "모집방법: 온라인 접수")
 
-    def test_offline_event_keeps_venue_and_puts_url_in_details(self):
+    def test_offline_event_uses_source_url_as_location_and_preserves_venue_in_details(self):
         source = "설명회 https://notice.example/offline\n장소: 서울시청 시민홀"
         events = [
             {
@@ -520,12 +553,12 @@ class ApplyAnnouncementUrlTests(unittest.TestCase):
 
         updated = date_utils.apply_announcement_url(events, source)
 
-        self.assertEqual(updated[0]["location"], "서울시청 시민홀")
-        self.assertIn("https://notice.example/offline", updated[0]["details"])
-        self.assertIn("https://notice.example/offline", updated[0]["details_brief"])
+        self.assertEqual(updated[0]["location"], "https://notice.example/offline")
+        self.assertIn("실제 장소: 서울시청 시민홀", updated[0]["details"])
+        self.assertIn("실제 장소: 서울시청 시민홀", updated[0]["details_brief"])
         self.assertIn("참석자 안내", updated[0]["details"])
 
-    def test_offline_location_mixed_with_url_is_split(self):
+    def test_offline_location_mixed_with_url_moves_venue_to_details(self):
         source = "https://notice.example/class"
         events = [
             {
@@ -540,8 +573,8 @@ class ApplyAnnouncementUrlTests(unittest.TestCase):
 
         updated = date_utils.apply_announcement_url(events, source)
 
-        self.assertEqual(updated[0]["location"], "강남 코엑스 3층")
-        self.assertIn("공고: https://notice.example/class", updated[0]["details"])
+        self.assertEqual(updated[0]["location"], "https://notice.example/class")
+        self.assertIn("실제 장소: 강남 코엑스 3층", updated[0]["details"])
 
     def test_does_not_duplicate_url_already_in_details(self):
         source = "https://notice.example/keep"
@@ -577,6 +610,48 @@ class ApplyAnnouncementUrlTests(unittest.TestCase):
 
         self.assertEqual(updated[0]["location"], "본관 3층")
         self.assertEqual(updated[0]["details"], "팀 회의")
+
+    def test_preserves_full_source_url_query_string_in_location(self):
+        source = (
+            "https://www.hongik.ac.kr/kr/newscenter/notice.do"
+            "?articleNo=157070&mode=view&noCat=396"
+        )
+        events = [
+            {
+                "title": "[마감] 2026년 마포 청년 창업 아이디어 경진대회",
+                "start_date": "20261006T090000",
+                "end_date": "20261006T180000",
+                "location": "홍익대학교",
+                "details": "신청 마감",
+                "details_brief": "신청 마감",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, source)
+
+        self.assertEqual(updated[0]["location"], source)
+        self.assertIn("실제 장소: 홍익대학교", updated[0]["details"])
+
+    def test_source_url_location_keeps_zoom_link_in_details(self):
+        source = (
+            "https://notice.example/program\n"
+            "온라인 교육 링크: https://zoom.us/j/123456789"
+        )
+        events = [
+            {
+                "title": "온라인 교육",
+                "start_date": "20260820T100000",
+                "end_date": "20260820T120000",
+                "location": "https://zoom.us/j/123456789",
+                "details": "교육 안내",
+                "details_brief": "교육 안내",
+            }
+        ]
+
+        updated = date_utils.apply_announcement_url(events, source)
+
+        self.assertEqual(updated[0]["location"], "https://notice.example/program")
+        self.assertIn("접속 링크: https://zoom.us/j/123456789", updated[0]["details"])
 
     def test_prefers_fetched_page_url_over_body_links(self):
         source = (
