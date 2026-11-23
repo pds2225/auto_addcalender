@@ -1,5 +1,7 @@
 # TASKS.md — Auto Dev Queue
 
+> **deprecated — 실행 기준은 `origin/main:TASK.md` 하나다. 이 파일은 과거 기록이며 실행하지 않는다(삭제하지 않음).**
+
 ## 상태 범례
 
 | 심볼 | 상태 |
