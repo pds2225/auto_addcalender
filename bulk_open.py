@@ -15,12 +15,11 @@ OPEN_GAP_MS_MOBILE = 700
 BULK_OPEN_SCRIPT = r"""
 var openedIndexes = {};
 var opening = false;
-var OPEN_GAP_MS = 500;
+var isMobile = false;
 try {
-  if (typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '')) {
-    OPEN_GAP_MS = 700;
-  }
+  isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
 } catch (e) {}
+var OPEN_GAP_MS = isMobile ? 700 : 500;
 
 function openedOk(win) {
   return !!win;
@@ -106,6 +105,14 @@ function updateButton() {
   } else if (n === 0) {
     btn.textContent = '선택 일괄 열기 (0개)';
     msg.textContent = '열 일정을 하나 이상 선택해 주세요.';
+  } else if (isMobile) {
+    if (openedCount > 0) {
+      btn.textContent = '다음 일정 열기 (' + n + '개 남음)';
+      msg.textContent = openedCount + '개는 열었습니다. 안드로이드에서는 버튼을 한 번 누를 때마다 일정 1개가 열립니다.';
+    } else {
+      btn.textContent = '다음 일정 열기 (' + n + '개)';
+      msg.textContent = '안드로이드에서는 버튼을 한 번 누를 때마다 구글 캘린더 1개가 열립니다. 같은 버튼을 눌러 나머지를 이어서 여세요.';
+    }
   } else if (openedCount > 0) {
     btn.textContent = '남은 일정 일괄 열기 (' + n + '개)';
     msg.textContent = openedCount + '개는 열었습니다. 팝업을 허용한 뒤 같은 버튼을 누르면 남은 ' + n + '개가 이어서 열립니다.';
@@ -145,8 +152,14 @@ function openSelectedAll() {
     updateButton();
     return;
   }
-  opening = true;
   var stamp = Date.now();
+  if (isMobile) {
+    openOne(selected[0], stamp);
+    renderList();
+    updateButton();
+    return;
+  }
+  opening = true;
   var i = 0;
   var btn = document.getElementById('bulk-btn');
   var msg = document.getElementById('bulk-msg');
@@ -189,7 +202,7 @@ updateButton();
 
 def bulk_open_iframe_height(count: int) -> int:
     list_height = min(count, 6) * 52
-    return 180 + list_height
+    return 196 + list_height
 
 
 def build_bulk_open_page(items: list[dict]) -> str:
@@ -290,7 +303,7 @@ def build_bulk_open_page(items: list[dict]) -> str:
 </div>
 <button id="bulk-btn" type="button" onclick="openSelectedAll()">선택 일괄 열기 ({count}개)</button>
 <div id="bulk-list"></div>
-<p id="bulk-msg">체크한 일정의 구글 캘린더 탭을 짧은 간격으로 순서대로 엽니다. 각 탭에서 저장을 눌러 주세요.</p>
+<p id="bulk-msg">체크한 일정을 엽니다. 휴대폰에서는 버튼을 한 번 누를 때마다 1개가 열립니다.</p>
 <script>
 var items = {items_json};
 """

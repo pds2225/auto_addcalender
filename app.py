@@ -443,7 +443,7 @@ def render_bulk_register_section(events, selected_platforms):
         return
 
     st.subheader("⚡ 선택 일괄 열기")
-    st.caption("원하는 일정만 체크한 뒤 버튼을 누르면 선택한 구글 캘린더 탭이 짧은 간격으로 순서대로 열립니다.")
+    st.caption("원하는 일정만 체크한 뒤 버튼을 누르세요. 휴대폰(안드로이드)에서는 한 번 누를 때마다 일정 1개가 열립니다.")
 
     items = [
         {
@@ -579,7 +579,7 @@ if st.session_state.registered and st.session_state.events:
         default=["구글 캘린더"],
         help="카카오는 .ics 파일 다운로드 후 카카오 캘린더에서 가져오기로 등록할 수 있습니다.",
     )
-    st.caption("여러 일정이면 원하는 일정만 체크한 뒤 선택 일괄 열기를 누르세요. 선택한 구글 캘린더 탭이 짧은 간격으로 순서대로 열립니다.")
+    st.caption("여러 일정이면 원하는 일정만 체크한 뒤 선택 일괄 열기를 누르세요. 휴대폰에서는 같은 버튼을 눌러 일정을 하나씩 엽니다.")
 
     # ── 일괄 등록 ─────────────────────────────────────
     render_bulk_register_section(events, selected_platforms)
